@@ -135,6 +135,7 @@ struct __toku_db_env_internal {
     int is_panicked; // if nonzero, then its an error number
     char *panic_string;
     uint32_t open_flags;
+    uint32_t debug_flags;
     int open_mode;
     toku_env_errcall_t errcall;
     void *errfile;
@@ -306,5 +307,11 @@ txn_is_read_only(DB_TXN* txn) {
 void env_panic(DB_ENV * env, int cause, const char * msg);
 void env_note_db_opened(DB_ENV *env, DB *db);
 void env_note_db_closed(DB_ENV *env, DB *db);
+
+#define ENV_DEBUG_MAYBE_IGNORE_PRELOCK(env, lock_flags) do { \
+    if ((env)->i->debug_flags & ENV_DEBUG_IGNORE_PRELOCK) { \
+        (lock_flags) &= ~(DB_PRELOCKED | DB_PRELOCKED_WRITE); \
+    } \
+} while (0)
 
 #endif

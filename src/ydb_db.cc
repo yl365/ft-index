@@ -1052,6 +1052,7 @@ toku_db_create(DB ** db, DB_ENV * env, uint32_t flags) {
     result->i->open_flags = 0;
     result->i->open_mode = 0;
     result->i->indexer = NULL;
+
     *db = result;
     return 0;
 }

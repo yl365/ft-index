@@ -164,6 +164,7 @@ c_get_wrapper_callback(DBT const *key, DBT const *val, void *extra) {
 static inline uint32_t 
 get_cursor_prelocked_flags(uint32_t flags, DBC* dbc) {
     uint32_t lock_flags = flags & (DB_PRELOCKED | DB_PRELOCKED_WRITE);
+    ENV_DEBUG_MAYBE_IGNORE_PRELOCK(dbc->dbp->dbenv, lock_flags);
 
     //DB_READ_UNCOMMITTED and DB_READ_COMMITTED transactions 'own' all read locks for user-data dictionaries.
     if (dbc_struct_i(dbc)->iso != TOKU_ISO_SERIALIZABLE) {

@@ -168,7 +168,7 @@ static void print_dbtype(void) {
         if (!(flags & bit)) break;         \
     }                                      \
     assert(which < 32);                    \
-    printf("#define %s %u\n", #name, bit); \
+    printf("#define %s (1U << %u)\n", #name, which); \
     flags |= bit;                          \
     })
 
@@ -289,6 +289,11 @@ static void print_defines (void) {
     printf("#define DBC_DISABLE_PREFETCHING 0x20000000\n"); // private tokudb
     printf("#define DB_UPDATE_CMP_DESCRIPTOR 0x40000000\n"); // private tokudb
 
+    {
+        //Env Debug option flags
+        uint32_t env_debug_flags = 0;
+        dodefine_from_track(env_debug_flags, ENV_DEBUG_IGNORE_PRELOCK);
+    }
     {
         //dbt flags
         uint32_t dbt_flags = 0;
@@ -452,7 +457,8 @@ static void print_db_env_struct (void) {
 			     "int (*get_txn_from_xid)                 (DB_ENV*, /*in*/ TOKU_XA_XID *, /*out*/ DB_TXN **)",
 			     "int (*get_cursor_for_directory)            (DB_ENV*, /*in*/ DB_TXN *, /*out*/ DBC **)",
 			     "int (*get_cursor_for_persistent_environment) (DB_ENV*, /*in*/ DB_TXN *, /*out*/ DBC **)",
-                 "void (*change_fsync_log_period)(DB_ENV*, uint32_t)",
+                             "void (*change_fsync_log_period)(DB_ENV*, uint32_t)",
+                             "int (*set_debug_options)(DB_ENV *, uint32_t debug_flags)",
                              NULL};
 
 	sort_and_dump_fields("db_env", true, extra);

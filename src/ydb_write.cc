@@ -138,8 +138,9 @@ ydb_write_layer_get_status(YDB_WRITE_LAYER_STATUS statp) {
 
 
 static inline uint32_t 
-get_prelocked_flags(uint32_t flags) {
+get_prelocked_flags(DB *db, uint32_t flags) {
     uint32_t lock_flags = flags & (DB_PRELOCKED | DB_PRELOCKED_WRITE);
+    ENV_DEBUG_MAYBE_IGNORE_PRELOCK(db->dbenv, lock_flags);
     return lock_flags;
 }
 
@@ -219,7 +220,7 @@ toku_db_del(DB *db, DB_TXN *txn, DBT *key, uint32_t flags, bool holds_mo_lock) {
     //DB_DELETE_ANY means delete regardless of whether it exists in the db.
     bool error_if_missing = (bool)(!(flags&DB_DELETE_ANY));
     unchecked_flags &= ~DB_DELETE_ANY;
-    uint32_t lock_flags = get_prelocked_flags(flags);
+    uint32_t lock_flags = get_prelocked_flags(db, flags);
     unchecked_flags &= ~lock_flags;
     bool do_locking = (bool)(db->i->lt && !(lock_flags&DB_PRELOCKED_WRITE));
 
@@ -260,7 +261,7 @@ toku_db_put(DB *db, DB_TXN *txn, DBT *key, DBT *val, uint32_t flags, bool holds_
     HANDLE_READ_ONLY_TXN(txn);
     int r = 0;
 
-    uint32_t lock_flags = get_prelocked_flags(flags);
+    uint32_t lock_flags = get_prelocked_flags(db, flags);
     flags &= ~lock_flags;
 
     r = db_put_check_size_constraints(db, key, val);
@@ -308,7 +309,7 @@ toku_db_update(DB *db, DB_TXN *txn,
     HANDLE_READ_ONLY_TXN(txn);
     int r = 0;
 
-    uint32_t lock_flags = get_prelocked_flags(flags);
+    uint32_t lock_flags = get_prelocked_flags(db, flags);
     flags &= ~lock_flags;
 
     r = db_put_check_size_constraints(db, key, update_function_extra);
@@ -350,7 +351,7 @@ toku_db_update_broadcast(DB *db, DB_TXN *txn,
     HANDLE_READ_ONLY_TXN(txn);
     int r = 0;
 
-    uint32_t lock_flags = get_prelocked_flags(flags);
+    uint32_t lock_flags = get_prelocked_flags(db, flags);
     flags &= ~lock_flags;
     uint32_t is_resetting_op_flag = flags & DB_IS_RESETTING_OP;
     flags &= is_resetting_op_flag;
@@ -536,7 +537,7 @@ env_del_multiple(
 
     for (uint32_t which_db = 0; which_db < num_dbs; which_db++) {
         DB *db = db_array[which_db];
-        lock_flags[which_db] = get_prelocked_flags(flags_array[which_db]);
+        lock_flags[which_db] = get_prelocked_flags(db, flags_array[which_db]);
         remaining_flags[which_db] = flags_array[which_db] & ~lock_flags[which_db];
 
         if (db == src_db) {
@@ -684,7 +685,7 @@ env_put_multiple_internal(
     for (uint32_t which_db = 0; which_db < num_dbs; which_db++) {
         DB *db = db_array[which_db];
 
-        lock_flags[which_db] = get_prelocked_flags(flags_array[which_db]);
+        lock_flags[which_db] = get_prelocked_flags(db, flags_array[which_db]);
         remaining_flags[which_db] = flags_array[which_db] & ~lock_flags[which_db];
 
         //Generate the row
@@ -797,7 +798,7 @@ env_update_multiple(DB_ENV *env, DB *src_db, DB_TXN *txn,
             DB *db = db_array[which_db];
             DBT curr_old_key, curr_new_key, curr_new_val;
             
-            lock_flags[which_db] = get_prelocked_flags(flags_array[which_db]);
+            lock_flags[which_db] = get_prelocked_flags(db, flags_array[which_db]);
             remaining_flags[which_db] = flags_array[which_db] & ~lock_flags[which_db];
 
             // keys[0..num_dbs-1] are the new keys

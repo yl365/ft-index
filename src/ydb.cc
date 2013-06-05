@@ -2261,6 +2261,23 @@ env_get_cursor_for_directory(DB_ENV* env, DB_TXN* txn, DBC** c) {
     return toku_db_cursor(env->i->directory, txn, c, 0);
 }
 
+static int
+env_set_debug_options(DB_ENV * env, uint32_t debug_flags) {
+    HANDLE_PANICKED_ENV(env);
+    int r;
+
+    if (env_opened(env)) {
+        r = toku_ydb_do_error(env, EINVAL, "You cannot set the debug options after opening the env\n");
+    }
+    else if (env->i->debug_flags)
+        r = toku_ydb_do_error(env, EINVAL, "You cannot set the debug flags more than once.\n");
+    else {
+        env->i->debug_flags = debug_flags;
+        r = 0;
+    }
+    return r;
+}
+
 static int 
 toku_env_create(DB_ENV ** envp, uint32_t flags) {
     int r = ENOSYS;
@@ -2308,6 +2325,7 @@ toku_env_create(DB_ENV ** envp, uint32_t flags) {
     USENV(cleaner_set_iterations);
     USENV(cleaner_get_iterations);
     USENV(set_cachesize);
+    USENV(set_debug_options);
 #if DB_VERSION_MAJOR == 4 && DB_VERSION_MINOR >= 3
     USENV(get_cachesize);
 #endif
