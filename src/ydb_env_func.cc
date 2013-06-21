@@ -93,6 +93,7 @@ PATENT RIGHTS GRANT:
 #include <memory.h>
 #include <db.h>
 
+#include <ft/ft.h>
 #include <ft/ft-ops.h>
 #include <ft/ft-flusher.h>
 #include <ft/checkpoint.h>

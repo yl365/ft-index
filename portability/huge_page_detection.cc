@@ -101,20 +101,22 @@ extern "C" {
 static bool check_huge_pages_config_file(const char *fname)
 // Effect: Return true if huge pages are there.  If so, print diagnostics.
 {
-    FILE *f=fopen(fname, "r");
+    bool huge_pages_enabled = false;
+    FILE *f = fopen(fname, "r");
     if (f) {
         // It's redhat and the feature appears to be there.  Is it enabled?
         char buf[1000];
         char *r = fgets(buf, sizeof(buf), f);
-        assert(r!=NULL);
+        assert(r != NULL);
         if (strstr(buf, "[always]")) {
             fprintf(stderr, "Transparent huge pages are enabled, according to %s\n", fname);
-            return true;
+            huge_pages_enabled = true;
         } else {
-            return false;
+            huge_pages_enabled =false;
         }
+        fclose(f);
     }
-    return false;
+    return huge_pages_enabled;
 }
 
 /* struct mapinfo { */

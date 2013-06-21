@@ -255,7 +255,8 @@ toku_logger_open_with_last_xid(const char *directory, TOKULOGGER logger, TXNID l
     if (r!=0) return r;
 
     logger->next_log_file_number = nexti;
-    open_logfile(logger);
+    r = open_logfile(logger);
+    if (r!=0) return r;
     if (last_xid == TXNID_NONE) {
         last_xid = last_xid_if_clean_shutdown;
     }
@@ -288,7 +289,7 @@ toku_logger_open_rollback(TOKULOGGER logger, CACHETABLE cachetable, bool create)
 
     FT_HANDLE t = NULL;   // Note, there is no DB associated with this BRT.
     toku_ft_handle_create(&t);
-    int r = toku_ft_handle_open(t, ROLLBACK_CACHEFILE_NAME, create, create, cachetable, NULL_TXN);
+    int r = toku_ft_handle_open(t, toku_product_name_strings.rollback_cachefile, create, create, cachetable, NULL_TXN);
     assert_zero(r);
     logger->rollback_cachefile = t->ft->cf;
     toku_logger_initialize_rollback_cache(logger, t->ft);
@@ -1014,8 +1015,9 @@ int toku_fread_TXNID   (FILE *f, TXNID *txnid, struct x1764 *checksum, uint32_t 
 int toku_fread_TXNID_PAIR   (FILE *f, TXNID_PAIR *txnid, struct x1764 *checksum, uint32_t *len) {
     TXNID parent;
     TXNID child;
-    toku_fread_TXNID(f, &parent, checksum, len);
-    toku_fread_TXNID(f, &child, checksum, len);
+    int r;
+    r = toku_fread_TXNID(f, &parent, checksum, len); if (r != 0) { return r; }
+    r = toku_fread_TXNID(f, &child, checksum, len);  if (r != 0) { return r; }
     txnid->parent_id64 = parent;
     txnid->child_id64 = child;
     return 0;

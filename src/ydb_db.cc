@@ -167,16 +167,17 @@ create_iname(DB_ENV *env, uint64_t id1, uint64_t id2, char *hint, const char *ma
                    8 +  // hex file format version
                    24 + // hex id (normally the txnid's parent and child)
                    8  + // hex value of n if non-neg
-                   sizeof("_B___.tokudb")]; // extra pieces
+                   sizeof("_B___.") + // extra pieces
+                   strlen(toku_product_name)];
     if (n < 0)
         bytes = snprintf(inamebase, sizeof(inamebase),
-                         "%s_%" PRIx64 "_%" PRIx64 "_%" PRIx32            ".tokudb",
-                         hint, id1, id2, FT_LAYOUT_VERSION);
+                         "%s_%" PRIx64 "_%" PRIx64 "_%" PRIx32            ".%s",
+                         hint, id1, id2, FT_LAYOUT_VERSION, toku_product_name);
     else {
         invariant(strlen(mark) == 1);
         bytes = snprintf(inamebase, sizeof(inamebase),
-                         "%s_%" PRIx64 "_%" PRIx64 "_%" PRIx32 "_%s_%" PRIx32 ".tokudb",
-                         hint, id1, id2, FT_LAYOUT_VERSION, mark, n);
+                         "%s_%" PRIx64 "_%" PRIx64 "_%" PRIx32 "_%s_%" PRIx32 ".%s",
+                         hint, id1, id2, FT_LAYOUT_VERSION, mark, n, toku_product_name);
     }
     assert(bytes>0);
     assert(bytes<=(int)sizeof(inamebase)-1);
@@ -746,6 +747,12 @@ toku_db_key_range64(DB* db, DB_TXN* txn, DBT* key, uint64_t* less_p, uint64_t* e
     return 0;
 }
 
+static int toku_db_get_key_after_bytes(DB *db, DB_TXN *txn, const DBT *start_key, uint64_t skip_len, void (*callback)(const DBT *end_key, uint64_t actually_skipped, void *extra), void *cb_extra, uint32_t UU(flags)) {
+    HANDLE_PANICKED_DB(db);
+    HANDLE_DB_ILLEGAL_WORKING_PARENT_TXN(db, txn);
+    return toku_ft_get_key_after_bytes(db->i->ft_handle, start_key, skip_len, callback, cb_extra);
+}
+
 // needed by loader.c
 int 
 toku_db_pre_acquire_table_lock(DB *db, DB_TXN *txn) {
@@ -1019,6 +1026,7 @@ toku_db_create(DB ** db, DB_ENV * env, uint32_t flags) {
     USDB(pre_acquire_fileops_lock);
     USDB(key_range64);
     USDB(keys_range64);
+    USDB(get_key_after_bytes);
     USDB(hot_optimize);
     USDB(stat64);
     USDB(get_fractal_tree_info64);
