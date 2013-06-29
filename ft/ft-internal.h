@@ -778,8 +778,6 @@ static inline CACHETABLE_WRITE_CALLBACK get_write_callbacks_for_node(FT h) {
     return wc;
 }
 
-static const FTNODE null_ftnode=0;
-
 // Values to be used to update ftcursor if a search is successful.
 struct ft_cursor_leaf_info_to_be {
     uint32_t index;
