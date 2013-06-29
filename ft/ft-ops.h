@@ -251,7 +251,7 @@ int toku_verify_ft (FT_HANDLE brt)  __attribute__ ((warn_unused_result));
 int toku_verify_ft_with_progress (FT_HANDLE brt, int (*progress_callback)(void *extra, float progress), void *extra, int verbose, int keep_going)  __attribute__ ((warn_unused_result));
 
 typedef struct ft_cursor *FT_CURSOR;
-int toku_ft_cursor (FT_HANDLE, FT_CURSOR*, TOKUTXN, bool, bool)  __attribute__ ((warn_unused_result));
+int toku_ft_cursor (FT_HANDLE, FT_CURSOR, TOKUTXN, bool, bool)  __attribute__ ((warn_unused_result));
 void toku_ft_cursor_set_leaf_mode(FT_CURSOR);
 // Sets a boolean on the brt cursor that prevents uncessary copying of
 // the cursor duing a one query.

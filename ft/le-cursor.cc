@@ -103,7 +103,7 @@ struct le_cursor {
     // so this is never necessary
     // use a fake db for comparisons. 
     struct __toku_db fake_db;
-    FT_CURSOR ft_cursor;
+    struct ft_cursor cursor;
     bool neg_infinity; // true when the le cursor is positioned at -infinity (initial setting)
     bool pos_infinity; // true when the le cursor is positioned at +infinity (when _next returns DB_NOTFOUND)
 };
@@ -116,10 +116,10 @@ toku_le_cursor_create(LE_CURSOR *le_cursor_result, FT_HANDLE ft_handle, TOKUTXN 
         result = get_error_errno();
     }
     else {
-        result = toku_ft_cursor(ft_handle, &le_cursor->ft_cursor, txn, false, false);
+        result = toku_ft_cursor(ft_handle, &le_cursor->cursor, txn, false, false);
         if (result == 0) {
             // TODO move the leaf mode to the ft cursor constructor
-            toku_ft_cursor_set_leaf_mode(le_cursor->ft_cursor);
+            toku_ft_cursor_set_leaf_mode(&le_cursor->cursor);
             le_cursor->neg_infinity = true;
             le_cursor->pos_infinity = false;
             // zero out the fake DB. this is a rare operation so it's not too slow.
@@ -137,7 +137,7 @@ toku_le_cursor_create(LE_CURSOR *le_cursor_result, FT_HANDLE ft_handle, TOKUTXN 
 }
 
 void toku_le_cursor_close(LE_CURSOR le_cursor) {
-    toku_ft_cursor_close(le_cursor->ft_cursor);
+    toku_ft_cursor_close(&le_cursor->cursor);
     toku_free(le_cursor);
 }
 
@@ -152,7 +152,7 @@ toku_le_cursor_next(LE_CURSOR le_cursor, FT_GET_CALLBACK_FUNCTION getf, void *ge
     } else {
         le_cursor->neg_infinity = false;
         // TODO replace this with a non deprecated function. Which?
-        result = toku_ft_cursor_get(le_cursor->ft_cursor, NULL, getf, getf_v, DB_NEXT);
+        result = toku_ft_cursor_get(&le_cursor->cursor, NULL, getf, getf_v, DB_NEXT);
         if (result == DB_NOTFOUND) {
             le_cursor->pos_infinity = true;
         }
@@ -169,11 +169,11 @@ toku_le_cursor_is_key_greater(LE_CURSOR le_cursor, const DBT *key) {
         result = false;     // all keys are less than +infinity
     } else {
         // get the comparison function and descriptor from the cursor's ft
-        FT_HANDLE ft_handle = le_cursor->ft_cursor->ft_handle;
+        FT_HANDLE ft_handle = le_cursor->cursor.ft_handle;
         ft_compare_func keycompare = toku_ft_get_bt_compare(ft_handle);
         le_cursor->fake_db.cmp_descriptor = toku_ft_get_cmp_descriptor(ft_handle);
         // get the current position from the cursor and compare it to the given key.
-        DBT *cursor_key = &le_cursor->ft_cursor->key;
+        DBT *cursor_key = &le_cursor->cursor.key;
         int r = keycompare(&le_cursor->fake_db, cursor_key, key);
         if (r < 0) {
             result = true;  // key is right of the cursor key

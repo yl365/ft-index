@@ -4070,7 +4070,7 @@ ft_cursor_extract_key_and_val(LEAFENTRY le,
 
 int toku_ft_cursor (
     FT_HANDLE brt,
-    FT_CURSOR *cursorptr,
+    FT_CURSOR cursor,
     TOKUTXN ttxn,
     bool is_snapshot_read,
     bool disable_prefetching
@@ -4084,7 +4084,7 @@ int toku_ft_cursor (
             return TOKUDB_MVCC_DICTIONARY_TOO_NEW;
         }
     }
-    FT_CURSOR XCALLOC(cursor);
+    memset(cursor, 0, sizeof(struct ft_cursor));
     cursor->ft_handle = brt;
     cursor->prefetching = false;
     toku_init_dbt(&cursor->range_lock_left_key);
@@ -4096,7 +4096,6 @@ int toku_ft_cursor (
     cursor->ttxn = ttxn;
     cursor->disable_prefetching = disable_prefetching;
     cursor->is_temporary = false;
-    *cursorptr = cursor;
     return 0;
 }
 
@@ -4139,7 +4138,6 @@ void toku_ft_cursor_close(FT_CURSOR cursor) {
     ft_cursor_cleanup_dbts(cursor);
     toku_destroy_dbt(&cursor->range_lock_left_key);
     toku_destroy_dbt(&cursor->range_lock_right_key);
-    toku_free(cursor);
 }
 
 static inline void ft_cursor_set_prefetching(FT_CURSOR cursor) {
@@ -5613,15 +5611,15 @@ int
 toku_ft_lookup (FT_HANDLE brt, DBT *k, FT_GET_CALLBACK_FUNCTION getf, void *getf_v)
 {
     int r, rr;
-    FT_CURSOR cursor;
+    struct ft_cursor cursor;
 
     rr = toku_ft_cursor(brt, &cursor, NULL, false, false);
     if (rr != 0) return rr;
 
     int op = DB_SET;
-    r = toku_ft_cursor_get(cursor, k, getf, getf_v, op);
+    r = toku_ft_cursor_get(&cursor, k, getf, getf_v, op);
 
-    toku_ft_cursor_close(cursor);
+    toku_ft_cursor_close(&cursor);
 
     return r;
 }

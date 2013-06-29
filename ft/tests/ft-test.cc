@@ -334,7 +334,7 @@ static void  test_read_what_was_written (void) {
 static void test_cursor_last_empty(void) {
     CACHETABLE ct;
     FT_HANDLE brt;
-    FT_CURSOR cursor=0;
+    struct ft_cursor cursor;
     int r;
     if (verbose) printf("%s", __FUNCTION__);
     unlink(fname);
@@ -347,17 +347,17 @@ static void test_cursor_last_empty(void) {
     r = toku_ft_cursor(brt, &cursor, NULL, false, false);            assert(r==0);
     {
 	struct check_pair pair = {0,0,0,0,0};
-	r = toku_ft_cursor_get(cursor, NULL, lookup_checkf, &pair, DB_LAST);
+	r = toku_ft_cursor_get(&cursor, NULL, lookup_checkf, &pair, DB_LAST);
 	assert(pair.call_count==0);
 	assert(r==DB_NOTFOUND);
     }
     {
 	struct check_pair pair = {0,0,0,0,0};
-	r = toku_ft_cursor_get(cursor, NULL, lookup_checkf, &pair, DB_FIRST);
+	r = toku_ft_cursor_get(&cursor, NULL, lookup_checkf, &pair, DB_FIRST);
 	assert(pair.call_count==0);
 	assert(r==DB_NOTFOUND);
     }
-    toku_ft_cursor_close(cursor);
+    toku_ft_cursor_close(&cursor);
     r = toku_close_ft_handle_nolsn(brt, 0);
     //printf("%s:%d %d alloced\n", __FILE__, __LINE__, toku_get_n_items_malloced()); toku_print_malloced_items();
     toku_cachetable_close(&ct);
@@ -368,7 +368,7 @@ static void test_cursor_last_empty(void) {
 static void test_cursor_next (void) {
     CACHETABLE ct;
     FT_HANDLE brt;
-    FT_CURSOR cursor=0;
+    struct ft_cursor cursor;
     int r;
     DBT kbt, vbt;
 
@@ -390,7 +390,7 @@ static void test_cursor_next (void) {
     if (verbose) printf("%s:%d calling toku_ft_cursor_get(...)\n", __FILE__, __LINE__);
     {
 	struct check_pair pair = {7, "byebye", 7, "byenow", 0};
-	r = toku_ft_cursor_get(cursor, NULL, lookup_checkf, &pair, DB_NEXT);
+	r = toku_ft_cursor_get(&cursor, NULL, lookup_checkf, &pair, DB_NEXT);
 	if (verbose) printf("%s:%d called toku_ft_cursor_get(...)\n", __FILE__, __LINE__);
 	assert(r==0);
 	assert(pair.call_count==1);
@@ -398,18 +398,18 @@ static void test_cursor_next (void) {
 
     {
 	struct check_pair pair = {6, "hello", 6, "there", 0};
-	r = toku_ft_cursor_get(cursor, NULL, lookup_checkf, &pair, DB_NEXT);
+	r = toku_ft_cursor_get(&cursor, NULL, lookup_checkf, &pair, DB_NEXT);
 	assert(r==0);
 	assert(pair.call_count==1);
     }
     {
 	struct check_pair pair = {0, 0, 0, 0, 0};
-	r = toku_ft_cursor_get(cursor, NULL, lookup_checkf, &pair, DB_NEXT);
+	r = toku_ft_cursor_get(&cursor, NULL, lookup_checkf, &pair, DB_NEXT);
 	assert(r==DB_NOTFOUND);
 	assert(pair.call_count==0);
     }
 
-    toku_ft_cursor_close(cursor);
+    toku_ft_cursor_close(&cursor);
     r = toku_close_ft_handle_nolsn(brt, 0);
     //printf("%s:%d %d alloced\n", __FILE__, __LINE__, toku_get_n_items_malloced()); toku_print_malloced_items();
     toku_cachetable_close(&ct);
@@ -472,7 +472,7 @@ static void test_wrongendian_compare (int wrong_p, unsigned int N) {
 	toku_ft_insert(brt, &kbt, &vbt, null_txn);
     }
     {
-	FT_CURSOR cursor=0;
+	struct ft_cursor cursor;
 	r = toku_ft_cursor(brt, &cursor, NULL, false, false);            assert(r==0);
 
 	for (i=0; i<2; i++) {
@@ -482,7 +482,7 @@ static void test_wrongendian_compare (int wrong_p, unsigned int N) {
 	    b[2] = a[1] = (unsigned char)((i>>8)&255);
 	    b[1] = a[2] = (unsigned char)((i>>16)&255);
 	    b[0] = a[3] = (unsigned char)((i>>24)&255);
-	    r = toku_ft_cursor_get(cursor, NULL, lookup_checkf, &pair, DB_NEXT);
+	    r = toku_ft_cursor_get(&cursor, NULL, lookup_checkf, &pair, DB_NEXT);
 	    assert(r==0);
 	    assert(pair.call_count==1);
 	}
@@ -513,7 +513,7 @@ static void test_wrongendian_compare (int wrong_p, unsigned int N) {
 	    toku_ft_insert(brt, &kbt, &vbt, null_txn);
 	    toku_cachetable_verify(ct);
 	}
-	FT_CURSOR cursor=0;
+	struct ft_cursor cursor;
 	r = toku_ft_cursor(brt, &cursor, NULL, false, false);            assert(r==0);
 	
 	for (i=0; i<N; i++) {
@@ -523,12 +523,12 @@ static void test_wrongendian_compare (int wrong_p, unsigned int N) {
 	    b[2] = a[1] = (unsigned char)((i>>8)&255);
 	    b[1] = a[2] = (unsigned char)((i>>16)&255);
 	    b[0] = a[3] = (unsigned char)((i>>24)&255);
-	    r = toku_ft_cursor_get(cursor, NULL, lookup_checkf, &pair, DB_NEXT);
+	    r = toku_ft_cursor_get(&cursor, NULL, lookup_checkf, &pair, DB_NEXT);
 	    assert(r==0);
 	    assert(pair.call_count==1);
 	    toku_cachetable_verify(ct);
 	}
-        toku_ft_cursor_close(cursor);
+        toku_ft_cursor_close(&cursor);
 	r = toku_close_ft_handle_nolsn(brt, 0);
 	assert(r==0);
     }
@@ -654,19 +654,19 @@ static void test_ft_delete_present(int n) {
     }
 
     /* cursor should not find anything */
-    FT_CURSOR cursor=0;
+    struct ft_cursor cursor;
 
     r = toku_ft_cursor(t, &cursor, NULL, false, false);
     assert(r == 0);
 
     {
 	struct check_pair pair = {0,0,0,0,0};
-	r = toku_ft_cursor_get(cursor, NULL, lookup_checkf, &pair, DB_FIRST);
+	r = toku_ft_cursor_get(&cursor, NULL, lookup_checkf, &pair, DB_FIRST);
 	assert(r != 0);
 	assert(pair.call_count==0);
     }
 
-    toku_ft_cursor_close(cursor);
+    toku_ft_cursor_close(&cursor);
 
     r = toku_close_ft_handle_nolsn(t, 0);        assert(r==0);
     toku_cachetable_close(&ct);
@@ -785,7 +785,7 @@ static void test_ft_delete_cursor_first(int n) {
     }
 
     /* cursor should find the last key: n-1 */
-    FT_CURSOR cursor=0;
+    struct ft_cursor cursor;
 
     r = toku_ft_cursor(t, &cursor, NULL, false, false);
     assert(r == 0);
@@ -794,12 +794,12 @@ static void test_ft_delete_cursor_first(int n) {
 	int kv = toku_htonl(n-1);
 	int vv = n-1;
 	struct check_pair pair = {sizeof kv, &kv, sizeof vv, &vv, 0};
-	r = toku_ft_cursor_get(cursor, NULL, lookup_checkf, &pair, DB_FIRST);
+	r = toku_ft_cursor_get(&cursor, NULL, lookup_checkf, &pair, DB_FIRST);
 	assert(r == 0);
 	assert(pair.call_count==1);
     }
 
-    toku_ft_cursor_close(cursor);
+    toku_ft_cursor_close(&cursor);
 
     r = toku_close_ft_handle_nolsn(t, 0);        assert(r==0);
     toku_cachetable_close(&ct);
@@ -882,7 +882,7 @@ static void test_new_ft_cursor_create_close (void) {
     int r;
     FT_HANDLE brt=0;
     int n = 8;
-    FT_CURSOR cursors[n];
+    struct ft_cursor cursors[n];
 
     toku_ft_handle_create(&brt);
 
@@ -892,7 +892,7 @@ static void test_new_ft_cursor_create_close (void) {
     }
 
     for (i=0; i<n; i++) {
-        toku_ft_cursor_close(cursors[i]);
+        toku_ft_cursor_close(&cursors[i]);
     }
 
     r = toku_close_ft_handle_nolsn(brt, 0); assert(r == 0);
@@ -920,7 +920,7 @@ static void test_new_ft_cursor_first(int n) {
         toku_ft_insert(t, toku_fill_dbt(&key, &k, sizeof k), toku_fill_dbt(&val, &v, sizeof v), 0); assert(r == 0);
     }
 
-    FT_CURSOR cursor=0;
+    struct ft_cursor cursor;
 
     r = toku_ft_cursor(t, &cursor, NULL, false, false); assert(r == 0);
 
@@ -931,21 +931,21 @@ static void test_new_ft_cursor_first(int n) {
 	int kv = toku_htonl(i);
 	int vv = toku_htonl(i);
 	struct check_pair pair = {sizeof kv, &kv, sizeof vv, &vv, 0};
-        r = toku_ft_cursor_get(cursor, NULL, lookup_checkf, &pair, DB_FIRST);
+        r = toku_ft_cursor_get(&cursor, NULL, lookup_checkf, &pair, DB_FIRST);
         if (r != 0) {
 	    assert(pair.call_count==0);
 	    break;
 	}
 	assert(pair.call_count==1);
 
-        r = toku_ft_cursor_delete(cursor, 0, null_txn); assert(r == 0);
+        r = toku_ft_cursor_delete(&cursor, 0, null_txn); assert(r == 0);
     }
     assert(i == n);
 
     if (key.data) toku_free(key.data);
     if (val.data) toku_free(val.data);
 
-    toku_ft_cursor_close(cursor);
+    toku_ft_cursor_close(&cursor);
     r = toku_close_ft_handle_nolsn(t, 0); assert(r==0);
     toku_cachetable_close(&ct);
 }
@@ -972,7 +972,7 @@ static void test_new_ft_cursor_last(int n) {
         toku_ft_insert(t, toku_fill_dbt(&key, &k, sizeof k), toku_fill_dbt(&val, &v, sizeof v), 0); assert(r == 0);
     }
 
-    FT_CURSOR cursor=0;
+    struct ft_cursor cursor;
 
     r = toku_ft_cursor(t, &cursor, NULL, false, false); assert(r == 0);
 
@@ -983,7 +983,7 @@ static void test_new_ft_cursor_last(int n) {
 	int kk = toku_htonl(i);
 	int vv = toku_htonl(i);
 	struct check_pair pair = {sizeof kk, &kk, sizeof vv, &vv, 0};
-        r = toku_ft_cursor_get(cursor, NULL, lookup_checkf, &pair, DB_LAST);
+        r = toku_ft_cursor_get(&cursor, NULL, lookup_checkf, &pair, DB_LAST);
         if (r != 0) {
 	    assert(pair.call_count==0);
 	    break;
@@ -991,14 +991,14 @@ static void test_new_ft_cursor_last(int n) {
 	assert(pair.call_count==1);
 
 	//if (n==512 && i<=360) { printf("i=%d\n", i); toku_dump_ft(stdout, t); }
-        r = toku_ft_cursor_delete(cursor, 0, null_txn); assert(r == 0);
+        r = toku_ft_cursor_delete(&cursor, 0, null_txn); assert(r == 0);
     }
     assert(i == -1);
 
     if (key.data) toku_free(key.data);
     if (val.data) toku_free(val.data);
 
-    toku_ft_cursor_close(cursor);
+    toku_ft_cursor_close(&cursor);
     r = toku_close_ft_handle_nolsn(t, 0); assert(r==0);
     toku_cachetable_close(&ct);
 }
@@ -1024,7 +1024,7 @@ static void test_new_ft_cursor_next(int n) {
         toku_ft_insert(t, toku_fill_dbt(&key, &k, sizeof k), toku_fill_dbt(&val, &v, sizeof v), 0); assert(r == 0);
     }
 
-    FT_CURSOR cursor=0;
+    struct ft_cursor cursor;
 
     r = toku_ft_cursor(t, &cursor, NULL, false, false); assert(r == 0);
 
@@ -1032,7 +1032,7 @@ static void test_new_ft_cursor_next(int n) {
 	int kk = toku_htonl(i);
 	int vv = toku_htonl(i);
 	struct check_pair pair = {sizeof kk, &kk, sizeof vv, &vv, 0};
-        r = toku_ft_cursor_get(cursor, NULL, lookup_checkf, &pair, DB_NEXT);
+        r = toku_ft_cursor_get(&cursor, NULL, lookup_checkf, &pair, DB_NEXT);
         if (r != 0) {
 	    assert(pair.call_count ==0);
 	    break;
@@ -1041,7 +1041,7 @@ static void test_new_ft_cursor_next(int n) {
     }
     assert(i == n);
 
-    toku_ft_cursor_close(cursor);
+    toku_ft_cursor_close(&cursor);
     r = toku_close_ft_handle_nolsn(t, 0); assert(r==0);
     toku_cachetable_close(&ct);
 }
@@ -1067,7 +1067,7 @@ static void test_new_ft_cursor_prev(int n) {
         toku_ft_insert(t, toku_fill_dbt(&key, &k, sizeof k), toku_fill_dbt(&val, &v, sizeof v), 0); assert(r == 0);
     }
 
-    FT_CURSOR cursor=0;
+    struct ft_cursor cursor;
 
     r = toku_ft_cursor(t, &cursor, NULL, false, false); assert(r == 0);
 
@@ -1075,7 +1075,7 @@ static void test_new_ft_cursor_prev(int n) {
 	int kk = toku_htonl(i);
 	int vv = toku_htonl(i);
 	struct check_pair pair = {sizeof kk, &kk, sizeof vv, &vv, 0};
-        r = toku_ft_cursor_get(cursor, NULL, lookup_checkf, &pair, DB_PREV);
+        r = toku_ft_cursor_get(&cursor, NULL, lookup_checkf, &pair, DB_PREV);
         if (r != 0) {
 	    assert(pair.call_count==0);
 	    break;
@@ -1084,7 +1084,7 @@ static void test_new_ft_cursor_prev(int n) {
     }
     assert(i == -1);
 
-    toku_ft_cursor_close(cursor);
+    toku_ft_cursor_close(&cursor);
     r = toku_close_ft_handle_nolsn(t, 0); assert(r==0);
     toku_cachetable_close(&ct);
 }
@@ -1110,7 +1110,7 @@ static void test_new_ft_cursor_current(int n) {
         toku_ft_insert(t, toku_fill_dbt(&key, &k, sizeof k), toku_fill_dbt(&val, &v, sizeof v), 0); assert(r == 0);
     }
 
-    FT_CURSOR cursor=0;
+    struct ft_cursor cursor;
 
     r = toku_ft_cursor(t, &cursor, NULL, false, false); assert(r == 0);
 
@@ -1119,7 +1119,7 @@ static void test_new_ft_cursor_current(int n) {
 	    int kk = toku_htonl(i);
 	    int vv = toku_htonl(i);
 	    struct check_pair pair = {sizeof kk, &kk, sizeof vv, &vv, 0};
-	    r = toku_ft_cursor_get(cursor, NULL, lookup_checkf, &pair, DB_FIRST);
+	    r = toku_ft_cursor_get(&cursor, NULL, lookup_checkf, &pair, DB_FIRST);
 	    if (r != 0) {
 		assert(pair.call_count==0);
 		break;
@@ -1130,7 +1130,7 @@ static void test_new_ft_cursor_current(int n) {
 	    int kk = toku_htonl(i);
 	    int vv = toku_htonl(i);
 	    struct check_pair pair = {sizeof kk, &kk, sizeof vv, &vv, 0};
-	    r = toku_ft_cursor_get(cursor, NULL, lookup_checkf, &pair, DB_CURRENT);
+	    r = toku_ft_cursor_get(&cursor, NULL, lookup_checkf, &pair, DB_CURRENT);
 	    assert(r == 0);
 	    assert(pair.call_count==1);
 	}
@@ -1139,18 +1139,18 @@ static void test_new_ft_cursor_current(int n) {
 	    int kk = toku_htonl(i);
 	    int vv = toku_htonl(i);
 	    struct check_pair pair = {sizeof kk, &kk, sizeof vv, &vv, 0};
-	    r = toku_ft_cursor_get(cursor, NULL, lookup_checkf, &pair, DB_CURRENT_BINDING);
+	    r = toku_ft_cursor_get(&cursor, NULL, lookup_checkf, &pair, DB_CURRENT_BINDING);
 	    assert(r == 0);
 	    assert(pair.call_count==1);
 	}
 
-        r = toku_ft_cursor_delete(cursor, 0, null_txn); assert(r == 0);
+        r = toku_ft_cursor_delete(&cursor, 0, null_txn); assert(r == 0);
 
 	{
 	    static int count=0;
 	    count++;
 	    struct check_pair pair = {0,0,0,0,0};
-	    r = toku_ft_cursor_get(cursor, NULL, lookup_checkf, &pair, DB_CURRENT);
+	    r = toku_ft_cursor_get(&cursor, NULL, lookup_checkf, &pair, DB_CURRENT);
 	    CKERR2(r,DB_NOTFOUND); // previous DB_KEYEMPTY
 	    assert(pair.call_count==0);
 	}
@@ -1159,14 +1159,14 @@ static void test_new_ft_cursor_current(int n) {
 	    int kk = toku_htonl(i);
 	    int vv = toku_htonl(i);
 	    struct check_pair pair = {sizeof kk, &kk, sizeof vv, &vv, 0};
-	    r = toku_ft_cursor_get(cursor, NULL, lookup_checkf, &pair, DB_CURRENT_BINDING);
+	    r = toku_ft_cursor_get(&cursor, NULL, lookup_checkf, &pair, DB_CURRENT_BINDING);
 	    assert(r == 0);
 	    assert(pair.call_count==1);
 	}
     }
     assert(i == n);
 
-    toku_ft_cursor_close(cursor);
+    toku_ft_cursor_close(&cursor);
     r = toku_close_ft_handle_nolsn(t, 0); assert(r==0);
     toku_cachetable_close(&ct);
 }
@@ -1177,7 +1177,7 @@ static void test_new_ft_cursor_set_range(int n) {
     int r;
     CACHETABLE ct;
     FT_HANDLE brt=0;
-    FT_CURSOR cursor=0;
+    struct ft_cursor cursor;
 
     toku_cachetable_create(&ct, 0, ZERO_LSN, NULL_LOGGER);
     unlink(fname);
@@ -1212,7 +1212,7 @@ static void test_new_ft_cursor_set_range(int n) {
 	struct check_pair pair = {sizeof k,  NULL,  // NULL data means don't check it
 				  sizeof vv,  &vv,
 				  0};
-        r = toku_ft_cursor_get(cursor, &key, lookup_checkf, &pair, DB_SET_RANGE);
+        r = toku_ft_cursor_get(&cursor, &key, lookup_checkf, &pair, DB_SET_RANGE);
         if (v > max_key) {
             /* there is no smallest key if v > the max key */
             assert(r == DB_NOTFOUND);
@@ -1223,7 +1223,7 @@ static void test_new_ft_cursor_set_range(int n) {
         }
     }
 
-    toku_ft_cursor_close(cursor);
+    toku_ft_cursor_close(&cursor);
 
     r = toku_close_ft_handle_nolsn(brt, 0); assert(r==0);
 
@@ -1236,7 +1236,7 @@ static void test_new_ft_cursor_set(int n, int cursor_op, DB *db) {
     int r;
     CACHETABLE ct;
     FT_HANDLE brt;
-    FT_CURSOR cursor=0;
+    struct ft_cursor cursor;
 
     unlink(fname);
 
@@ -1264,7 +1264,7 @@ static void test_new_ft_cursor_set(int n, int cursor_op, DB *db) {
         DBT key;
         toku_fill_dbt(&key, &k, sizeof k);
 	struct check_pair pair = {sizeof k, &k, sizeof v, &v, 0};
-        r = toku_ft_cursor_get(cursor, &key, lookup_checkf, &pair, cursor_op);
+        r = toku_ft_cursor_get(&cursor, &key, lookup_checkf, &pair, cursor_op);
         assert(r == 0);
 	assert(pair.call_count==1);
         if (cursor_op == DB_SET) assert(key.data == &k);
@@ -1278,13 +1278,13 @@ static void test_new_ft_cursor_set(int n, int cursor_op, DB *db) {
         DBT key;
         toku_fill_dbt(&key, &k, sizeof k);
 	struct check_pair pair = {0,0,0,0,0};
-        r = toku_ft_cursor_get(cursor, &key, lookup_checkf, &pair, DB_SET);
+        r = toku_ft_cursor_get(&cursor, &key, lookup_checkf, &pair, DB_SET);
         assert(r == DB_NOTFOUND);
 	assert(pair.call_count==0);
         assert(key.data == &k);
     }
 
-    toku_ft_cursor_close(cursor);
+    toku_ft_cursor_close(&cursor);
 
     r = toku_close_ft_handle_nolsn(brt, 0); assert(r==0);
 

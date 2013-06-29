@@ -101,7 +101,6 @@ PATENT RIGHTS GRANT:
 #include <db.h>
 #include <inttypes.h>
 
-
 // Use the C++ bool and constants (true false), rather than BOOL, TRUE, and FALSE.
 
 typedef struct ft_handle *FT_HANDLE;
@@ -127,6 +126,38 @@ typedef struct txnid_pair_s {
     TXNID parent_id64;
     TXNID child_id64;
 } TXNID_PAIR;
+
+namespace toku {
+    template<typename omtdata_t, typename omtdataout_t, bool supports_marks>
+    class omt;
+}
+
+// Values to be used to update ftcursor if a search is successful.
+struct ft_cursor_leaf_info_to_be {
+    uint32_t index;
+    toku::omt<void *, void *, false> *omt;
+};
+
+// Values to be used to pin a leaf for shortcut searches
+struct ft_cursor_leaf_info {
+    struct ft_cursor_leaf_info_to_be  to_be;
+};
+
+/* a brt cursor is represented as a kv pair in a tree */
+struct ft_cursor {
+    struct toku_list cursors_link;
+    FT_HANDLE ft_handle;
+    bool prefetching;
+    DBT key, val;             // The key-value pair that the cursor currently points to
+    DBT range_lock_left_key, range_lock_right_key;
+    bool left_is_neg_infty, right_is_pos_infty;
+    bool is_snapshot_read; // true if query is read_committed, false otherwise
+    bool is_leaf_mode;
+    bool disable_prefetching;
+    bool is_temporary;
+    struct tokutxn *ttxn;
+    struct ft_cursor_leaf_info  leaf_info;
+};
 
 
 #define TXNID_NONE_LIVING ((TXNID)0)

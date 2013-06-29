@@ -135,7 +135,7 @@ static void test_sub_block(int n) {
     error = toku_open_ft_handle(fname, false, &brt, nodesize, basementnodesize, compression_method, ct, null_txn, toku_builtin_compare_fun);
     assert(error == 0);
 
-    FT_CURSOR cursor;
+    struct ft_cursor cursor;
     error = toku_ft_cursor(brt, &cursor, NULL, false, false);
     assert(error == 0);
 
@@ -143,7 +143,7 @@ static void test_sub_block(int n) {
         int k = htonl(i);
         int v = i;
 	struct check_pair pair = {sizeof k, &k, sizeof v, &v, 0};	
-        error = toku_ft_cursor_get(cursor, NULL, lookup_checkf, &pair, DB_NEXT);
+        error = toku_ft_cursor_get(&cursor, NULL, lookup_checkf, &pair, DB_NEXT);
         if (error != 0) {
 	    assert(pair.call_count==0);
             break;
@@ -152,7 +152,7 @@ static void test_sub_block(int n) {
     }
     assert(i == n);
 
-    toku_ft_cursor_close(cursor);
+    toku_ft_cursor_close(&cursor);
 
     error = toku_close_ft_handle_nolsn(brt, 0);
     assert(error == 0);

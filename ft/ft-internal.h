@@ -778,33 +778,6 @@ static inline CACHETABLE_WRITE_CALLBACK get_write_callbacks_for_node(FT h) {
     return wc;
 }
 
-// Values to be used to update ftcursor if a search is successful.
-struct ft_cursor_leaf_info_to_be {
-    uint32_t index;
-    OMT       omt;
-};
-
-// Values to be used to pin a leaf for shortcut searches
-struct ft_cursor_leaf_info {
-    struct ft_cursor_leaf_info_to_be  to_be;
-};
-
-/* a brt cursor is represented as a kv pair in a tree */
-struct ft_cursor {
-    struct toku_list cursors_link;
-    FT_HANDLE ft_handle;
-    bool prefetching;
-    DBT key, val;             // The key-value pair that the cursor currently points to
-    DBT range_lock_left_key, range_lock_right_key;
-    bool left_is_neg_infty, right_is_pos_infty;
-    bool is_snapshot_read; // true if query is read_committed, false otherwise
-    bool is_leaf_mode;
-    bool disable_prefetching;
-    bool is_temporary;
-    TOKUTXN ttxn;
-    struct ft_cursor_leaf_info  leaf_info;
-};
-
 //
 // Helper function to fill a ftnode_fetch_extra with data
 // that will tell the fetch callback that the entire node is

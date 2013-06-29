@@ -270,7 +270,7 @@ struct __toku_db_txn_external {
 #define db_txn_struct_i(x) (&((struct __toku_db_txn_external *)x)->internal_part)
 
 struct __toku_dbc_internal {
-    struct ft_cursor *c;
+    struct ft_cursor c;
     DB_TXN *txn;
     TOKU_ISOLATION iso;
     struct simple_dbt skey_s,sval_s;
@@ -287,6 +287,10 @@ struct __toku_dbc_external {
 };
 	
 #define dbc_struct_i(x) (&((struct __toku_dbc_external *)x)->internal_part)
+
+static inline FT_CURSOR toku_c_ft_cursor(DBC *cursor) {
+    return &dbc_struct_i(cursor)->c;
+}
 
 static inline int 
 env_opened(DB_ENV *env) {
