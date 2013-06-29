@@ -2060,7 +2060,6 @@ toku_fifo_entry_key_msn_heaviside(const int32_t &offset, const struct toku_fifo_
     return key_msn_cmp(query_key, target_key, query->msn, extra.msn,
                        extra.desc, extra.cmp);
 }
-
 int
 toku_fifo_entry_key_msn_cmp(const struct toku_fifo_entry_key_msn_cmp_extra &extra, const int32_t &ao, const int32_t &bo)
 {
@@ -2084,13 +2083,19 @@ void toku_bnc_insert_msg(NONLEAF_CHILDINFO bnc, const void *key, ITEMLEN keylen,
     int r = toku_fifo_enq(bnc->buffer, key, keylen, data, datalen, type, msn, xids, is_fresh, &offset);
     assert_zero(r);
     if (ft_msg_type_applies_once(type)) {
-        DBT keydbt;
-        struct toku_fifo_entry_key_msn_heaviside_extra extra = { .desc = desc, .cmp = cmp, .fifo = bnc->buffer, .key = toku_fill_dbt(&keydbt, key, keylen), .msn = msn };
+
+        auto fifo_entry_key_msn_heaviside = [desc, cmp, bnc, key, keylen, msn] (const int32_t &fifo_offset) -> int {
+            const struct fifo_entry *query = toku_fifo_get_entry(bnc->buffer, fifo_offset);
+            DBT keydbt, qdbt;
+            const DBT *query_key = fill_dbt_for_fifo_entry(&qdbt, query);
+            return key_msn_cmp(query_key, toku_fill_dbt(&keydbt, key, keylen), query->msn, msn, desc, cmp);
+        };
+
         if (is_fresh) {
-            r = bnc->fresh_message_tree.insert<struct toku_fifo_entry_key_msn_heaviside_extra, toku_fifo_entry_key_msn_heaviside>(offset, extra, nullptr);
+            r = bnc->fresh_message_tree.insert_fast(fifo_entry_key_msn_heaviside, offset, nullptr);
             assert_zero(r);
         } else {
-            r = bnc->stale_message_tree.insert<struct toku_fifo_entry_key_msn_heaviside_extra, toku_fifo_entry_key_msn_heaviside>(offset, extra, nullptr);
+            r = bnc->stale_message_tree.insert_fast(fifo_entry_key_msn_heaviside, offset, nullptr);
             assert_zero(r);
         }
     } else {
@@ -4157,33 +4162,6 @@ ft_cursor_not_set(FT_CURSOR cursor) {
     return (bool)(cursor->key.data == NULL);
 }
 
-static int
-pair_leafval_heaviside_le (uint32_t klen, void *kval,
-                           ft_search_t *search) {
-    DBT x;
-    int cmp = search->compare(search,
-                              search->k ? toku_fill_dbt(&x, kval, klen) : 0);
-    // The search->compare function returns only 0 or 1
-    switch (search->direction) {
-    case FT_SEARCH_LEFT:   return cmp==0 ? -1 : +1;
-    case FT_SEARCH_RIGHT:  return cmp==0 ? +1 : -1; // Because the comparison runs backwards for right searches.
-    }
-    abort(); return 0;
-}
-
-
-static int
-heaviside_from_search_t (OMTVALUE lev, void *extra) {
-    LEAFENTRY CAST_FROM_VOIDP(le, lev);
-    ft_search_t *CAST_FROM_VOIDP(search, extra);
-    uint32_t keylen;
-    void* key = le_key_and_len(le, &keylen);
-
-    return pair_leafval_heaviside_le (keylen, key,
-                                      search);
-}
-
-
 //
 // Returns true if the value that is to be read is empty.
 //
@@ -4725,11 +4703,22 @@ ft_search_basement_node(
 ok: ;
     OMTVALUE datav;
     uint32_t idx = 0;
-    int r = toku_omt_find(bn->buffer,
-                          heaviside_from_search_t,
-                          search,
-                          direction,
-                          &datav, &idx);
+
+    auto heaviside_from_search_t = [search] (OMTVALUE omtv) -> int { 
+        LEAFENTRY CAST_FROM_VOIDP(le, omtv);
+        uint32_t keylen;
+        void *key = le_key_and_len(le, &keylen);
+        DBT x;
+        toku_fill_dbt(&x, key, keylen);
+        int cmp = search->compare(search, search->k ? &x : 0);
+        if (search->direction == FT_SEARCH_LEFT) {
+            return cmp == 0 ? -1 : +1;
+        } else {
+            invariant(search->direction == FT_SEARCH_RIGHT);
+            return cmp == 0 ? +1 : -1;
+        }
+    };
+    int r = bn->buffer->find_fast(heaviside_from_search_t, &datav, &idx);
     if (r!=0) return r;
 
     LEAFENTRY CAST_FROM_VOIDP(le, datav);
