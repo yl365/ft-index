@@ -208,6 +208,19 @@ typedef int64_t toku_off_t;
 
 #endif
 
+// Define some constants for Yama in case the build-machine's software is too old.
+#if !defined(HAVE_PR_SET_PTRACER)
+/*
+ * Set specific pid that is allowed to ptrace the current task.
+ * A value of 0 mean "no process".
+ */
+// Well defined ("Yama" in ascii)
+#define PR_SET_PTRACER 0x59616d61
+#endif
+#if !defined(HAVE_PR_SET_PTRACER_ANY)
+#define PR_SET_PTRACER_ANY ((unsigned long)-1)
+#endif
+
 #if defined(__cplusplus)
 // decltype() here gives a reference-to-pointer instead of just a pointer,
 // just use __typeof__
@@ -224,6 +237,7 @@ typedef int64_t toku_off_t;
 #include "toku_os.h"
 #include "toku_htod.h"
 #include "toku_assert.h"
+#include "toku_crash.h"
 
 #define UU(x) x __attribute__((__unused__))
 
