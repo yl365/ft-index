@@ -726,8 +726,6 @@ env_put_multiple_internal(
         else {
             r = env->i->generate_row_for_put(db, src_db, &keys[which_db], &vals[which_db], src_key, src_val);
             if (r != 0) goto cleanup;
-            put_keys[which_db] = keys[which_db];
-            put_vals[which_db] = vals[which_db];            
 
             paranoid_invariant(keys[which_db].size >= 0);
             paranoid_invariant(keys[which_db].size <= keys[which_db].capacity);

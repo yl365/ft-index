@@ -109,19 +109,19 @@ toku_init_dbt_flags(DBT *ybt, uint32_t flags) {
 }
 
 DBT_ARRAY *
-toku_dbt_array_init(DBT_ARRAY *dbts, int size, int capacity, uint32_t flags) {
+toku_dbt_array_init(DBT_ARRAY *dbts, int size, int capacity) {
     invariant(size <= capacity);
     invariant(size >= 0);
     invariant(capacity > 0);
     XMALLOC_N(capacity, dbts->dbts);
     for (int i = 0; i < capacity; i++) {
-        toku_init_dbt_flags(&dbts->dbts[i], flags);
+        toku_init_dbt_flags(&dbts->dbts[i], DB_DBT_REALLOC);
     }
     return dbts;
 }
 
 void
-toku_dbt_array_resize(DBT_ARRAY *dbts, int size, uint32_t flags) {
+toku_dbt_array_resize(DBT_ARRAY *dbts, int size) {
     if (size != dbts->size) {
         invariant(size >= 0);
         if (size > dbts->capacity) {
@@ -133,14 +133,14 @@ toku_dbt_array_resize(DBT_ARRAY *dbts, int size, uint32_t flags) {
             dbts->capacity = new_capacity;
             XREALLOC_N(new_capacity, dbts->dbts);
             for (int i = old_capacity; i < new_capacity; i++) {
-                toku_init_dbt_flags(&dbts->dbts[i], flags);
+                toku_init_dbt_flags(&dbts->dbts[i], DB_DBT_REALLOC);
             }
         } else if (size < dbts->size) {
             const int old_size = dbts->size;
             const int new_size = size;
             for (int i = old_size; i < new_size; i++) {
                 toku_destroy_dbt(&dbts->dbts[i]);
-                toku_init_dbt_flags(&dbts->dbts[i], flags);
+                toku_init_dbt_flags(&dbts->dbts[i], DB_DBT_REALLOC);
             }
             if (dbts->capacity >= 4 && size < dbts->capacity / 4) {
                 for (int i = old_size; i < dbts->capacity; i++) {

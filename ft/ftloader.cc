@@ -1253,8 +1253,8 @@ static int process_primary_rows_internal (FTLOADER bl, struct rowset *primary_ro
     // If we parallelize the first for loop, dest_keys/dest_vals init&cleanup need to move inside
     DBT_ARRAY dest_keys;
     DBT_ARRAY dest_vals;
-    toku_dbt_array_init(&dest_keys, 0, 1, DB_DBT_REALLOC);
-    toku_dbt_array_init(&dest_vals, 0, 1, DB_DBT_REALLOC);
+    toku_dbt_array_init(&dest_keys, 0, 1);
+    toku_dbt_array_init(&dest_vals, 0, 1);
 
     for (int i = 0; i < bl->N; i++) {
         unsigned int klimit,vlimit; // maximum row sizes.

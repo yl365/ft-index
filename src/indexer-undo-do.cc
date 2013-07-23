@@ -172,8 +172,8 @@ indexer_undo_do_init(DB_INDEXER *indexer) {
     XMALLOC_N(indexer->i->N, indexer->i->hot_keys);
     XMALLOC_N(indexer->i->N, indexer->i->hot_vals);
     for (int which = 0; which < indexer->i->N; which++) {
-        toku_dbt_array_init(&indexer->i->hot_keys[which], 0, 1, DB_DBT_REALLOC);
-        toku_dbt_array_init(&indexer->i->hot_vals[which], 0, 1, DB_DBT_REALLOC);
+        toku_dbt_array_init(&indexer->i->hot_keys[which], 0, 1);
+        toku_dbt_array_init(&indexer->i->hot_vals[which], 0, 1);
     }
 }
 
@@ -233,15 +233,18 @@ indexer_undo_do_committed(DB_INDEXER *indexer, DB *hotdb, ULEHANDLE ule, DBT_ARR
 
                         // send the delete message
                         result = indexer_ft_delete_committed(indexer, hotdb, hotkey, xids);
-                        if (result == 0)
+                        if (result == 0) {
                             indexer_commit_keys_add(&indexer->i->commit_keys, hotkey->size, hotkey->data);
+                        }
                     }
                 }
-            } else
+            } else {
                 assert(0);
+            }
         }
-        if (result != 0)
+        if (result != 0) {
             break;
+        }
 
         // do
         if (uxr_is_delete(uxr)) {
@@ -259,8 +262,9 @@ indexer_undo_do_committed(DB_INDEXER *indexer, DB *hotdb, ULEHANDLE ule, DBT_ARR
 
                     // send the insert message
                     result = indexer_ft_insert_committed(indexer, hotdb, hotkey, hotval, xids);
-                    if (result == 0)
+                    if (result == 0) {
                         indexer_commit_keys_add(&indexer->i->commit_keys, hotkey->size, hotkey->data);
+                    }
                 }
             }
         } else

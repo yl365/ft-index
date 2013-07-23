@@ -308,8 +308,8 @@ static int recover_env_init (RECOVER_ENV renv,
     file_map_init(&renv->fmap);
     renv->goforward = false;
     renv->cp = toku_cachetable_get_checkpointer(renv->ct);
-    toku_dbt_array_init(&renv->dest_keys, 0, 1, DB_DBT_REALLOC);
-    toku_dbt_array_init(&renv->dest_vals, 0, 1, DB_DBT_REALLOC);
+    toku_dbt_array_init(&renv->dest_keys, 0, 1);
+    toku_dbt_array_init(&renv->dest_vals, 0, 1);
     if (tokudb_recovery_trace)
         fprintf(stderr, "%s:%d\n", __FUNCTION__, __LINE__);
     return r;
@@ -1109,7 +1109,7 @@ static int toku_recover_enq_delete_multiple (struct logtype_enq_delete_multiple 
         DBT_ARRAY dest_keys;
         toku_fill_dbt(&src_key, l->src_key.data, l->src_key.len);
         toku_fill_dbt(&src_val, l->src_val.data, l->src_val.len);
-        toku_dbt_array_init(&dest_keys, 0, 1, DB_DBT_REALLOC);
+        toku_dbt_array_init(&dest_keys, 0, 1);
 
         for (uint32_t file = 0; file < l->dest_filenums.num; file++) {
             struct file_map_tuple *tuple = NULL;
