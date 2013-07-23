@@ -155,17 +155,12 @@ toku_dbt_array_resize(DBT_ARRAY *dbts, int size, uint32_t flags) {
 }
 
 void
-toku_dbt_array_destroy_shallow(DBT_ARRAY *dbts) {
-    toku_free(dbts->dbts);
-    ZERO_STRUCT(*dbts);
-}
-
-void
 toku_dbt_array_destroy(DBT_ARRAY *dbts) {
     for (int i = 0; i < dbts->capacity; i++) {
         toku_destroy_dbt(&dbts->dbts[i]);
     }
-    toku_dbt_array_destroy_shallow(dbts);
+    toku_free(dbts->dbts);
+    ZERO_STRUCT(*dbts);
 }
 
 
