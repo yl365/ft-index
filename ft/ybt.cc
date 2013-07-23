@@ -136,18 +136,14 @@ toku_dbt_array_resize(DBT_ARRAY *dbts, int size) {
                 toku_init_dbt_flags(&dbts->dbts[i], DB_DBT_REALLOC);
             }
         } else if (size < dbts->size) {
-            const int old_size = dbts->size;
-            const int new_size = size;
-            for (int i = old_size; i < new_size; i++) {
-                toku_destroy_dbt(&dbts->dbts[i]);
-                toku_init_dbt_flags(&dbts->dbts[i], DB_DBT_REALLOC);
-            }
-            if (dbts->capacity >= 4 && size < dbts->capacity / 4) {
-                for (int i = old_size; i < dbts->capacity; i++) {
+            if (dbts->capacity >= 8 && size < dbts->capacity / 4) {
+                const int old_capacity = dbts->capacity;
+                const int new_capacity = dbts->capacity / 2;
+                for (int i = new_capacity; i < old_capacity; i++) {
                     toku_destroy_dbt(&dbts->dbts[i]);
                 }
-                XREALLOC_N(dbts->capacity / 2, dbts->dbts);
-                dbts->capacity /= 2;
+                XREALLOC_N(new_capacity, dbts->dbts);
+                dbts->capacity = new_capacity;
             }
         }
         dbts->size = size;
@@ -155,12 +151,17 @@ toku_dbt_array_resize(DBT_ARRAY *dbts, int size) {
 }
 
 void
+toku_dbt_array_destroy_shallow(DBT_ARRAY *dbts) {
+    toku_free(dbts->dbts);
+    ZERO_STRUCT(*dbts);
+}
+
+void
 toku_dbt_array_destroy(DBT_ARRAY *dbts) {
     for (int i = 0; i < dbts->capacity; i++) {
         toku_destroy_dbt(&dbts->dbts[i]);
     }
-    toku_free(dbts->dbts);
-    ZERO_STRUCT(*dbts);
+    toku_dbt_array_destroy_shallow(dbts);
 }
 
 

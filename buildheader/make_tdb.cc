@@ -753,6 +753,7 @@ int main (int argc, char *const argv[] __attribute__((__unused__))) {
     printf("typedef int (*generate_row_for_del_func)(DB *dest_db, DB *src_db, DBT_ARRAY * dest_keys, const DBT *src_key, const DBT *src_val);\n");
     printf("DBT_ARRAY * toku_dbt_array_init(DBT_ARRAY *dbts, int size, int capacity) %s;\n", VISIBLE);
     printf("void toku_dbt_array_destroy(DBT_ARRAY *dbts) %s;\n", VISIBLE);
+    printf("void toku_dbt_array_destroy_shallow(DBT_ARRAY *dbts) %s;\n", VISIBLE);
     printf("void toku_dbt_array_resize(DBT_ARRAY *dbts, int size) %s;\n", VISIBLE);
 
     print_db_env_struct();
