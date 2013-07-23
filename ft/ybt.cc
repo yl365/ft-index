@@ -108,6 +108,68 @@ toku_init_dbt_flags(DBT *ybt, uint32_t flags) {
     return ybt;
 }
 
+DBT_ARRAY *
+toku_dbt_array_init(DBT_ARRAY *dbts, int size, int capacity, uint32_t flags) {
+    invariant(size <= capacity);
+    invariant(size >= 0);
+    invariant(capacity > 0);
+    XMALLOC_N(capacity, dbts->dbts);
+    for (int i = 0; i < capacity; i++) {
+        toku_init_dbt_flags(&dbts->dbts[i], flags);
+    }
+    return dbts;
+}
+
+void
+toku_dbt_array_resize(DBT_ARRAY *dbts, int size, uint32_t flags) {
+    if (size != dbts->size) {
+        invariant(size >= 0);
+        if (size > dbts->capacity) {
+            int new_capacity = dbts->capacity > 0 ? dbts->capacity : 1;
+            const int old_capacity = dbts->capacity;
+            while (new_capacity < size) {
+                new_capacity *= 2;
+            }
+            dbts->capacity = new_capacity;
+            XREALLOC_N(new_capacity, dbts->dbts);
+            for (int i = old_capacity; i < new_capacity; i++) {
+                toku_init_dbt_flags(&dbts->dbts[i], flags);
+            }
+        } else if (size < dbts->size) {
+            const int old_size = dbts->size;
+            const int new_size = size;
+            for (int i = old_size; i < new_size; i++) {
+                toku_destroy_dbt(&dbts->dbts[i]);
+                toku_init_dbt_flags(&dbts->dbts[i], flags);
+            }
+            if (dbts->capacity >= 4 && size < dbts->capacity / 4) {
+                for (int i = old_size; i < dbts->capacity; i++) {
+                    toku_destroy_dbt(&dbts->dbts[i]);
+                }
+                XREALLOC_N(dbts->capacity / 2, dbts->dbts);
+                dbts->capacity /= 2;
+            }
+        }
+        dbts->size = size;
+    }
+}
+
+void
+toku_dbt_array_destroy_shallow(DBT_ARRAY *dbts) {
+    toku_free(dbts->dbts);
+    ZERO_STRUCT(*dbts);
+}
+
+void
+toku_dbt_array_destroy(DBT_ARRAY *dbts) {
+    for (int i = 0; i < dbts->capacity; i++) {
+        toku_destroy_dbt(&dbts->dbts[i]);
+    }
+    toku_dbt_array_destroy_shallow(dbts);
+}
+
+
+
 void
 toku_destroy_dbt(DBT *dbt) {
     switch (dbt->flags) {
