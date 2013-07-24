@@ -137,8 +137,8 @@ typedef int (*operation_t)(DB_TXN *txn, ARG arg, void *operation_extra, void *st
 
 // TODO: Properly define these in db.h so we don't have to copy them here
 typedef int (*test_update_callback_f)(DB *, const DBT *key, const DBT *old_val, const DBT *extra, void (*set_val)(const DBT *new_val, void *set_extra), void *set_extra);
-typedef int (*test_generate_row_for_put_callback)(DB *dest_db, DB *src_db, DBT *dest_key, DBT *dest_data, const DBT *src_key, const DBT *src_data);
-typedef int (*test_generate_row_for_del_callback)(DB *dest_db, DB *src_db, DBT *dest_key, const DBT *src_key, const DBT *src_data);
+typedef int (*test_generate_row_for_put_callback)(DB *dest_db, DB *src_db, DBT_ARRAY *dest_keys, DBT_ARRAY *dest_vals, const DBT *src_key, const DBT *src_data);
+typedef int (*test_generate_row_for_del_callback)(DB *dest_db, DB *src_db, DBT_ARRAY *dest_keys, const DBT *src_key, const DBT *src_data);
 
 enum stress_lock_type {
     STRESS_LOCK_NONE = 0,
@@ -697,14 +697,21 @@ static int scan_op_and_maybe_check_sum(
 }
 
 static int generate_row_for_put(
-    DB *UU(dest_db), 
-    DB *UU(src_db), 
-    DBT *dest_key, 
-    DBT *dest_val, 
-    const DBT *src_key, 
+    DB *UU(dest_db),
+    DB *UU(src_db),
+    DBT_ARRAY *dest_keys,
+    DBT_ARRAY *dest_vals,
+    const DBT *src_key,
     const DBT *src_val
-    ) 
-{    
+    )
+{
+    toku_dbt_array_resize(dest_keys, 1);
+    toku_dbt_array_resize(dest_vals, 1);
+    DBT *dest_key = &dest_keys->dbts[0];
+    DBT *dest_val = &dest_vals->dbts[0];
+    dest_key->flags = 0;
+    dest_val->flags = 0;
+
     dest_key->data = src_key->data;
     dest_key->size = src_key->size;
     dest_key->flags = 0;
