@@ -1121,15 +1121,6 @@ static int toku_recover_enq_delete_multiple (struct logtype_enq_delete_multiple 
                 for (uint32_t i = 0; i < dest_keys.size; i++) {
                     toku_ft_maybe_delete(tuple->ft_handle, &dest_keys.dbts[i], txn, true, l->lsn, false);
                 }
-
-                for (int i = 0; i < dest_keys.capacity; i++) {
-                    //flags==0 means generate_row_for_put callback changed it
-                    //(and freed any memory necessary to do so) so that values are now stored
-                    //in temporary memory that does not need to be freed.  We need to continue
-                    //using DB_DBT_REALLOC however.
-                    if (dest_keys.dbts[i].flags == 0)
-                        toku_init_dbt_flags(&dest_keys.dbts[i], DB_DBT_REALLOC);
-                }
             }
         }
         toku_dbt_array_destroy(&dest_keys);
