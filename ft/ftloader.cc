@@ -1253,8 +1253,8 @@ static int process_primary_rows_internal (FTLOADER bl, struct rowset *primary_ro
     // If we parallelize the first for loop, dest_keys/dest_vals init&cleanup need to move inside
     DBT_ARRAY dest_keys;
     DBT_ARRAY dest_vals;
-    toku_dbt_array_init(&dest_keys, 0, 1);
-    toku_dbt_array_init(&dest_vals, 0, 1);
+    toku_dbt_array_init(&dest_keys, 1);
+    toku_dbt_array_init(&dest_vals, 1);
 
     for (int i = 0; i < bl->N; i++) {
         unsigned int klimit,vlimit; // maximum row sizes.
@@ -1288,7 +1288,6 @@ static int process_primary_rows_internal (FTLOADER bl, struct rowset *primary_ro
                     inc_error_count();
                     break;
                 }
-                paranoid_invariant(dest_keys.size >= 0);
                 paranoid_invariant(dest_keys.size <= dest_keys.capacity);
                 paranoid_invariant(dest_vals.size <= dest_vals.capacity);
                 paranoid_invariant(dest_keys.size == dest_vals.size);
@@ -1302,7 +1301,7 @@ static int process_primary_rows_internal (FTLOADER bl, struct rowset *primary_ro
                 val_array.size = val_array.capacity = 1;
                 val_array.dbts = &pval;
             }
-            for (int row = 0; row < key_array.size; row++) {
+            for (uint32_t row = 0; row < key_array.size; row++) {
                 DBT *dest_key = &key_array.dbts[row];
                 DBT *dest_val = &val_array.dbts[row];
                 if (dest_key->size > klimit) {

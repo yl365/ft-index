@@ -172,8 +172,8 @@ indexer_undo_do_init(DB_INDEXER *indexer) {
     XMALLOC_N(indexer->i->N, indexer->i->hot_keys);
     XMALLOC_N(indexer->i->N, indexer->i->hot_vals);
     for (int which = 0; which < indexer->i->N; which++) {
-        toku_dbt_array_init(&indexer->i->hot_keys[which], 0, 1);
-        toku_dbt_array_init(&indexer->i->hot_vals[which], 0, 1);
+        toku_dbt_array_init(&indexer->i->hot_keys[which], 1);
+        toku_dbt_array_init(&indexer->i->hot_vals[which], 1);
     }
 }
 
@@ -228,7 +228,7 @@ indexer_undo_do_committed(DB_INDEXER *indexer, DB *hotdb, ULEHANDLE ule, DBT_ARR
                 result = indexer_generate_hot_keys_vals(indexer, hotdb, ule, prevuxr, hot_keys, NULL);
                 if (result == 0) {
                     paranoid_invariant(hot_keys->size <= hot_keys->capacity);
-                    for (int i = 0; i < hot_keys->size; i++) {
+                    for (uint32_t i = 0; i < hot_keys->size; i++) {
                         DBT *hotkey = &hot_keys->dbts[i];
 
                         // send the delete message
@@ -256,7 +256,7 @@ indexer_undo_do_committed(DB_INDEXER *indexer, DB *hotdb, ULEHANDLE ule, DBT_ARR
                 paranoid_invariant(hot_keys->size == hot_vals->size);
                 paranoid_invariant(hot_keys->size <= hot_keys->capacity);
                 paranoid_invariant(hot_vals->size <= hot_vals->capacity);
-                for (int i = 0; i < hot_keys->size; i++) {
+                for (uint32_t i = 0; i < hot_keys->size; i++) {
                     DBT *hotkey = &hot_keys->dbts[i];
                     DBT *hotval = &hot_vals->dbts[i];
 
@@ -383,7 +383,7 @@ indexer_undo_do_provisional(DB_INDEXER *indexer, DB *hotdb, ULEHANDLE ule, struc
                 result = indexer_generate_hot_keys_vals(indexer, hotdb, ule, prevuxr, hot_keys, NULL);
                 if (result == 0) {
                     paranoid_invariant(hot_keys->size <= hot_keys->capacity);
-                    for (int i = 0; i < hot_keys->size; i++) {
+                    for (uint32_t i = 0; i < hot_keys->size; i++) {
                         DBT *hotkey = &hot_keys->dbts[i];
 
                         // send the delete message
@@ -424,7 +424,7 @@ indexer_undo_do_provisional(DB_INDEXER *indexer, DB *hotdb, ULEHANDLE ule, struc
                 paranoid_invariant(hot_keys->size == hot_vals->size);
                 paranoid_invariant(hot_keys->size <= hot_keys->capacity);
                 paranoid_invariant(hot_vals->size <= hot_vals->capacity);
-                for (int i = 0; i < hot_keys->size; i++) {
+                for (uint32_t i = 0; i < hot_keys->size; i++) {
                     DBT *hotkey = &hot_keys->dbts[i];
                     DBT *hotval = &hot_vals->dbts[i];
 

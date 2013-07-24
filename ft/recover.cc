@@ -308,8 +308,8 @@ static int recover_env_init (RECOVER_ENV renv,
     file_map_init(&renv->fmap);
     renv->goforward = false;
     renv->cp = toku_cachetable_get_checkpointer(renv->ct);
-    toku_dbt_array_init(&renv->dest_keys, 0, 1);
-    toku_dbt_array_init(&renv->dest_vals, 0, 1);
+    toku_dbt_array_init(&renv->dest_keys, 1);
+    toku_dbt_array_init(&renv->dest_vals, 1);
     if (tokudb_recovery_trace)
         fprintf(stderr, "%s:%d\n", __FUNCTION__, __LINE__);
     return r;
@@ -1056,7 +1056,6 @@ static int toku_recover_enq_insert_multiple (struct logtype_enq_insert_multiple 
                 if (db != src_db) {
                     r = renv->generate_row_for_put(db, src_db, &renv->dest_keys, &renv->dest_vals, &src_key, &src_val);
                     assert(r==0);
-                    invariant(renv->dest_keys.size >= 0);
                     invariant(renv->dest_keys.size <= renv->dest_keys.capacity);
                     invariant(renv->dest_vals.size <= renv->dest_vals.capacity);
                     invariant(renv->dest_keys.size == renv->dest_vals.size);
@@ -1069,7 +1068,7 @@ static int toku_recover_enq_insert_multiple (struct logtype_enq_insert_multiple 
                     val_array.size = val_array.capacity = 1;
                     val_array.dbts = &src_val;
                 }
-                for (int i = 0; i < key_array.size; i++) {
+                for (uint32_t i = 0; i < key_array.size; i++) {
                     toku_ft_maybe_insert(tuple->ft_handle, &key_array.dbts[i], &val_array.dbts[i], txn, true, l->lsn, false, FT_INSERT);
                 }
             }
@@ -1109,7 +1108,7 @@ static int toku_recover_enq_delete_multiple (struct logtype_enq_delete_multiple 
         DBT_ARRAY dest_keys;
         toku_fill_dbt(&src_key, l->src_key.data, l->src_key.len);
         toku_fill_dbt(&src_val, l->src_val.data, l->src_val.len);
-        toku_dbt_array_init(&dest_keys, 0, 1);
+        toku_dbt_array_init(&dest_keys, 1);
 
         for (uint32_t file = 0; file < l->dest_filenums.num; file++) {
             struct file_map_tuple *tuple = NULL;
@@ -1119,7 +1118,7 @@ static int toku_recover_enq_delete_multiple (struct logtype_enq_delete_multiple 
                 DB *db = &tuple->fake_db;
                 r = renv->generate_row_for_del(db, src_db, &dest_keys, &src_key, &src_val);
                 assert(r==0);
-                for (int i = 0; i < dest_keys.size; i++) {
+                for (uint32_t i = 0; i < dest_keys.size; i++) {
                     toku_ft_maybe_delete(tuple->ft_handle, &dest_keys.dbts[i], txn, true, l->lsn, false);
                 }
 

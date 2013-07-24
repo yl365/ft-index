@@ -404,7 +404,7 @@ static uint32_t
 sum_size(uint32_t num_arrays, DBT_ARRAY keys[], uint32_t overhead) {
     uint32_t sum = 0;
     for (uint32_t i = 0; i < num_arrays; i++) {
-        for (int j = 0; j < keys[i].size; j++) {
+        for (uint32_t j = 0; j < keys[i].size; j++) {
             sum += keys[i].dbts[j].size + overhead;
         }
     }
@@ -420,7 +420,7 @@ log_del_multiple(DB_TXN *txn, DB *src_db, const DBT *key, const DBT *val, uint32
         uint32_t del_single_sizes = sum_size(num_dbs, keys, toku_log_enq_delete_any_overhead);
         if (del_single_sizes < del_multiple_size) {
             for (uint32_t i = 0; i < num_dbs; i++) {
-                for (int j = 0; j < keys[i].size; j++) {
+                for (uint32_t j = 0; j < keys[i].size; j++) {
                     log_del_single(txn, brts[i], &keys[i].dbts[j]);
                 }
             }
@@ -446,7 +446,6 @@ do_del_multiple(DB_TXN *txn, uint32_t num_dbs, DB *db_array[], DBT_ARRAY keys[],
     for (uint32_t which_db = 0; r == 0 && which_db < num_dbs; which_db++) {
         DB *db = db_array[which_db];
 
-        paranoid_invariant(keys[which_db].size >= 0);
         paranoid_invariant(keys[which_db].size <= keys[which_db].capacity);
 
         // if db is being indexed by an indexer, then insert a delete message into the db if the src key is to the left or equal to the 
@@ -469,7 +468,7 @@ do_del_multiple(DB_TXN *txn, uint32_t num_dbs, DB *db_array[], DBT_ARRAY keys[],
             do_delete = !toku_indexer_is_key_right_of_le_cursor(indexer, indexer_src_key);
         }
         if (do_delete) {
-            for (int i = 0; i < keys[which_db].size; i++) {
+            for (uint32_t i = 0; i < keys[which_db].size; i++) {
                 toku_ft_maybe_delete(db->i->ft_handle, &keys[which_db].dbts[i], ttxn, false, ZERO_LSN, false);
             }
         }
@@ -560,7 +559,6 @@ env_del_multiple(
             r = env->i->generate_row_for_del(db, src_db, &keys[which_db], src_key, src_val);
             if (r != 0) goto cleanup;
             del_keys[which_db] = keys[which_db];
-            paranoid_invariant(del_keys[which_db].size >= 0);
             paranoid_invariant(del_keys[which_db].size <= del_keys[which_db].capacity);
         }
 
@@ -569,7 +567,7 @@ env_del_multiple(
             goto cleanup;
         }
         bool error_if_missing = (bool)(!(remaining_flags[which_db]&DB_DELETE_ANY));
-        for (int which_key = 0; which_key < del_keys[which_db].size; which_key++) {
+        for (uint32_t which_key = 0; which_key < del_keys[which_db].size; which_key++) {
             DBT *del_key = &del_keys[which_db].dbts[which_key];
             if (error_if_missing) {
                 //Check if the key exists in the db.
@@ -635,7 +633,6 @@ do_put_multiple(DB_TXN *txn, uint32_t num_dbs, DB *db_array[], DBT_ARRAY keys[],
         DB *db = db_array[which_db];
 
         paranoid_invariant(keys[which_db].size == vals[which_db].size);
-        paranoid_invariant(keys[which_db].size >= 0);
         paranoid_invariant(keys[which_db].size <= keys[which_db].capacity);
         paranoid_invariant(vals[which_db].size <= vals[which_db].capacity);
 
@@ -657,7 +654,7 @@ do_put_multiple(DB_TXN *txn, uint32_t num_dbs, DB *db_array[], DBT_ARRAY keys[],
             do_put = !toku_indexer_is_key_right_of_le_cursor(indexer, indexer_src_key);
         }
         if (do_put) {
-            for (int i = 0; i < keys[which_db].size; i++) {
+            for (uint32_t i = 0; i < keys[which_db].size; i++) {
                 // if db is being indexed by an indexer, then put into that db if the src key is to the left or equal to the
                 // indexers cursor.  we have to get the src_db from the indexer and find it in the db_array.
                 toku_ft_maybe_insert(db->i->ft_handle,
@@ -727,7 +724,6 @@ env_put_multiple_internal(
             r = env->i->generate_row_for_put(db, src_db, &keys[which_db], &vals[which_db], src_key, src_val);
             if (r != 0) goto cleanup;
 
-            paranoid_invariant(keys[which_db].size >= 0);
             paranoid_invariant(keys[which_db].size <= keys[which_db].capacity);
             paranoid_invariant(vals[which_db].size <= vals[which_db].capacity);
             paranoid_invariant(keys[which_db].size == vals[which_db].size);
@@ -735,7 +731,7 @@ env_put_multiple_internal(
             put_keys[which_db] = keys[which_db];
             put_vals[which_db] = vals[which_db];
         }
-        for (int i = 0; i < put_keys[which_db].size; i++) {
+        for (uint32_t i = 0; i < put_keys[which_db].size; i++) {
             DBT &put_key = put_keys[which_db].dbts[i];
             DBT &put_val = put_vals[which_db].dbts[i];
 
