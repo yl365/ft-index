@@ -795,24 +795,39 @@ env_update_multiple(DB_ENV *env, DB *src_db, DB_TXN *txn,
                     uint32_t num_keys, DBT_ARRAY keys[],
                     uint32_t num_vals, DBT_ARRAY vals[]) {
 #if 1
+    HANDLE_PANICKED_ENV(env);
+    HANDLE_READ_ONLY_TXN(txn);
+
+    if (!txn) {
+        return EINVAL;
+    }
+    if (!env->i->generate_row_for_put) {
+        return EINVAL;
+    }
+
+    HANDLE_ILLEGAL_WORKING_PARENT_TXN(env, txn);
+
+
     // Del old, insert new (slow but will work).
     int r, ret;
+    if (num_keys < num_dbs*2 || num_vals < num_dbs) {
+        return ENOMEM;
+    }
+
     DB_TXN *child_txn = NULL;
     int using_txns = env->i->open_flags & DB_INIT_TXN;
-    if (using_txns) {
+    if (using_txns && txn) {
         ret = toku_txn_begin(env, txn, &child_txn, DB_TXN_NOSYNC);
         invariant_zero(ret);
     }
     // cannot begin a checkpoint
     toku_multi_operation_client_lock();
-    invariant(num_keys == num_vals);
-    invariant(num_keys == num_dbs);
-    r = env_del_multiple(env, src_db, txn, old_src_key, old_src_data, num_dbs, db_array, keys, flags_array);
+    r = env_del_multiple(env, src_db, child_txn, old_src_key, old_src_data, num_dbs, db_array, keys+num_dbs, flags_array);
     if (r == 0) {
-        r = env_put_multiple(env, src_db, txn, new_src_key, new_src_data, num_dbs, db_array, keys, vals, flags_array);
+        r = env_put_multiple(env, src_db, child_txn, new_src_key, new_src_data, num_dbs, db_array, keys, vals, flags_array);
     }
     toku_multi_operation_client_unlock();
-    if (using_txns) {
+    if (using_txns && txn) {
         if (r == 0) {
             ret = locked_txn_commit(child_txn, DB_TXN_NOSYNC);
             invariant_zero(ret);
