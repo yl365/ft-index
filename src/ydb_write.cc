@@ -571,12 +571,10 @@ env_del_multiple(
             DBT *del_key = &del_keys[which_db].dbts[which_key];
             if (error_if_missing) {
                 //Check if the key exists in the db.
+                //Grabs a write lock
                 r = db_getf_set(db, txn, lock_flags[which_db]|DB_SERIALIZABLE|DB_RMW, del_key, ydb_getf_do_nothing, NULL);
                 if (r != 0) goto cleanup;
-            }
-
-            //Do locking if necessary.
-            if (db->i->lt && !(lock_flags[which_db] & DB_PRELOCKED_WRITE)) {
+            } else if (db->i->lt && !(lock_flags[which_db] & DB_PRELOCKED_WRITE)) {  //Do locking if necessary.
                 //Needs locking
                 r = toku_db_get_point_write_lock(db, txn, del_key);
                 if (r != 0) goto cleanup;
@@ -787,6 +785,13 @@ cleanup:
     return r;
 }
 
+static void swap_dbts(DBT *a, DBT *b) {
+    DBT c;
+    c = *a;
+    *a = *b;
+    *b = c;
+}
+
 int
 env_update_multiple(DB_ENV *env, DB *src_db, DB_TXN *txn,
                     DBT *old_src_key, DBT *old_src_data,
@@ -794,55 +799,14 @@ env_update_multiple(DB_ENV *env, DB *src_db, DB_TXN *txn,
                     uint32_t num_dbs, DB **db_array, uint32_t* flags_array,
                     uint32_t num_keys, DBT_ARRAY keys[],
                     uint32_t num_vals, DBT_ARRAY vals[]) {
-#if 1
-    HANDLE_PANICKED_ENV(env);
-    HANDLE_READ_ONLY_TXN(txn);
-
-    if (!txn) {
-        return EINVAL;
-    }
-    if (!env->i->generate_row_for_put) {
-        return EINVAL;
-    }
-
-    HANDLE_ILLEGAL_WORKING_PARENT_TXN(env, txn);
-
-
-    // Del old, insert new (slow but will work).
-    int r, ret;
-    if (num_keys < num_dbs*2 || num_vals < num_dbs) {
-        return ENOMEM;
-    }
-
-    DB_TXN *child_txn = NULL;
-    int using_txns = env->i->open_flags & DB_INIT_TXN;
-    if (using_txns && txn) {
-        ret = toku_txn_begin(env, txn, &child_txn, DB_TXN_NOSYNC);
-        invariant_zero(ret);
-    }
-    // cannot begin a checkpoint
-    toku_multi_operation_client_lock();
-    r = env_del_multiple(env, src_db, child_txn, old_src_key, old_src_data, num_dbs, db_array, keys+num_dbs, flags_array);
-    if (r == 0) {
-        r = env_put_multiple(env, src_db, child_txn, new_src_key, new_src_data, num_dbs, db_array, keys, vals, flags_array);
-    }
-    toku_multi_operation_client_unlock();
-    if (using_txns && txn) {
-        if (r == 0) {
-            ret = locked_txn_commit(child_txn, DB_TXN_NOSYNC);
-            invariant_zero(ret);
-        } else {
-            ret = locked_txn_abort(child_txn);
-            invariant_zero(ret);
-        }
-    }
-    return r;
-#else
     int r = 0;
 
     HANDLE_PANICKED_ENV(env);
     DB_INDEXER* indexer = NULL;
     HANDLE_READ_ONLY_TXN(txn);
+    DBT_ARRAY old_key_arrays[num_dbs];
+    DBT_ARRAY new_key_arrays[num_dbs];
+    DBT_ARRAY new_val_arrays[num_dbs];
 
     if (!txn) {
         r = EINVAL;
@@ -851,6 +815,10 @@ env_update_multiple(DB_ENV *env, DB *src_db, DB_TXN *txn,
     if (!env->i->generate_row_for_put) {
         r = EINVAL;
         goto cleanup;
+    }
+
+    if (num_dbs + num_dbs > num_keys || num_dbs > num_vals) {
+        r = ENOMEM; goto cleanup;
     }
 
     HANDLE_ILLEGAL_WORKING_PARENT_TXN(env, txn);
@@ -863,21 +831,21 @@ env_update_multiple(DB_ENV *env, DB *src_db, DB_TXN *txn,
         uint32_t n_del_dbs = 0;
         DB *del_dbs[num_dbs];
         FT_HANDLE del_fts[num_dbs];
-        DBT del_keys[num_dbs];
-        
+        DBT_ARRAY del_key_arrays[num_dbs];
+
         uint32_t n_put_dbs = 0;
         DB *put_dbs[num_dbs];
         FT_HANDLE put_fts[num_dbs];
-        DBT put_keys[num_dbs];
-        DBT put_vals[num_dbs];
+        DBT_ARRAY put_key_arrays[num_dbs];
+        DBT_ARRAY put_val_arrays[num_dbs];
 
         uint32_t lock_flags[num_dbs];
         uint32_t remaining_flags[num_dbs];
 
+        bool force_log_put_multiple = false;
         for (uint32_t which_db = 0; which_db < num_dbs; which_db++) {
             DB *db = db_array[which_db];
-            DBT curr_old_key, curr_new_key, curr_new_val;
-            
+
             lock_flags[which_db] = get_prelocked_flags(flags_array[which_db]);
             remaining_flags[which_db] = flags_array[which_db] & ~lock_flags[which_db];
 
@@ -885,80 +853,216 @@ env_update_multiple(DB_ENV *env, DB *src_db, DB_TXN *txn,
             // keys[num_dbs..2*num_dbs-1] are the old keys
             // vals[0..num_dbs-1] are the new vals
 
-            // Generate the old key and val
-            if (which_db + num_dbs >= num_keys) {
-                r = ENOMEM; goto cleanup;
-            }
             if (db == src_db) {
-                curr_old_key = *old_src_key;
+                // Copy the old keys
+                old_key_arrays[which_db].size = old_key_arrays[which_db].capacity = 1;
+                old_key_arrays[which_db].dbts = old_src_key;
+
+                // Copy the new keys and vals
+                new_key_arrays[which_db].size = new_key_arrays[which_db].capacity = 1;
+                new_key_arrays[which_db].dbts = new_src_key;
+
+                new_val_arrays[which_db].size = new_val_arrays[which_db].capacity = 1;
+                new_val_arrays[which_db].dbts = new_src_data;
             }
             else {
+                // Generate the old keys
                 r = env->i->generate_row_for_put(db, src_db, &keys[which_db + num_dbs], NULL, old_src_key, old_src_data);
                 if (r != 0) goto cleanup;
-                curr_old_key = keys[which_db + num_dbs];
-            }
-            // Generate the new key and val
-            if (which_db >= num_keys || which_db >= num_vals) {
-                r = ENOMEM; goto cleanup;
-            }
-            if (db == src_db) {
-                curr_new_key = *new_src_key;
-                curr_new_val = *new_src_data;
-            }
-            else {
+
+                paranoid_invariant(keys[which_db+num_dbs].size <= keys[which_db+num_dbs].capacity);
+                old_key_arrays[which_db] = keys[which_db+num_dbs];
+                // Generate the new keys and vals
+
                 r = env->i->generate_row_for_put(db, src_db, &keys[which_db], &vals[which_db], new_src_key, new_src_data);
                 if (r != 0) goto cleanup;
-                curr_new_key = keys[which_db];
-                curr_new_val = vals[which_db];
+
+                paranoid_invariant(keys[which_db].size <= keys[which_db].capacity);
+                paranoid_invariant(vals[which_db].size <= vals[which_db].capacity);
+                paranoid_invariant(keys[which_db].size == vals[which_db].size);
+
+                new_key_arrays[which_db] = keys[which_db];
+                new_val_arrays[which_db] = vals[which_db];
             }
-            ft_compare_func cmpfun = toku_db_get_compare_fun(db);
-            bool key_eq = cmpfun(db, &curr_old_key, &curr_new_key) == 0;
-            bool key_bytes_eq = (curr_old_key.size == curr_new_key.size && 
-                                 (memcmp(curr_old_key.data, curr_new_key.data, curr_old_key.size) == 0)
-                                 );
-            if (!key_eq) {
-                //Check overwrite constraints only in the case where 
-                // the keys are not equal.
-                // If the keys are equal, then we do not care of the flag is DB_NOOVERWRITE or 0
-                r = db_put_check_overwrite_constraint(db, txn,
-                                                      &curr_new_key,
-                                                      lock_flags[which_db], remaining_flags[which_db]);
-                if (r != 0) goto cleanup;
-                if (remaining_flags[which_db] == DB_NOOVERWRITE_NO_ERROR) {
-                    //update_multiple does not support delaying the no error, since we would
-                    //have to log the flag in the put_multiple.
-                    r = EINVAL; goto cleanup;
+            // Cases
+            //  - > 0 old keys, 0 new keys === PURE DELETE
+            //  - old keys > new_keys      === Either PURE DELETE or merge
+            //  - = 0 old keys, > 0 new keys == PURE INSERT
+            //  - old keys < new_keys        == Either pure insert or merge
+            //  - old keys = new_keys        == merge?
+            // This may not be the best because I may have to duplicate code in the while with 'after'
+            //
+            // TODO: 26 verify that API requires that all old keys/vals (including generated) actually exist in DB
+            // INITIAL GOAL FOR 'merge':
+            //      for each KEY:
+            //          case OLD key
+            //              PREPARE to Delete key
+            //                  write lock on old key
+            //          case NEW key
+            //              PREPARE to insert key
+            //                  db_put_check_overwrite_constraint
+            //                  write lock on new key (if above did not do it)
+            //                  db_put_check_size_constraints on new key/val
+            //          case Both key BYTE **UN**EQUAL
+            //              PREPARE to insert key
+            //                  write lock on new key (if above did not do it)
+            //                  db_put_check_size_constraints on new key/val
+            //              Will delete+insert
+            //          case Both key BYTE EQUAL, val size == 0
+            //              DO NOTHING
+            //          case Both key BYTE EQUAL, val size > 0
+            //              PREPARE to insert key
+            //                  write lock on new key (if above did not do it)
+            //                  db_put_check_size_constraints on new key/val
+            //              Will delete+insert
+            //             
+            //                  
+            //      For each NEW KEY that does not match(cmp) an OLD key:
+            //          db_put_check_overwrite_constraint
+            //          get point write lock (if not DB_NOOVERWRITE, because we already got lock)
+            //      For each NEW KEY that does not match(bytes) an old KEY
+            //          db_put_check_size_constraints
+            //      For each OLD key that does not match a NEW KEY:
+            //          get point write lock
+            //          
+            DBT_ARRAY &old_keys = old_key_arrays[which_db];
+            DBT_ARRAY &new_keys = new_key_arrays[which_db];
+            DBT_ARRAY &new_vals = new_val_arrays[which_db];
+
+            uint32_t num_skip = 0;
+            uint32_t num_del = 0;
+            uint32_t num_put = 0;
+            uint32_t idx_old = 0;
+            uint32_t idx_new = 0;
+            uint32_t idx_old_used = 0;
+            uint32_t idx_new_used = 0;
+            //TODO redo the condition
+            while (idx_old < old_keys.size || idx_new < new_keys.size) {
+                // Check for old key, both, new key
+                // Only old key
+                DBT *curr_old_key = &old_keys.dbts[idx_old];
+                DBT *curr_new_key = &new_keys.dbts[idx_new];
+                DBT *curr_new_val = &new_vals.dbts[idx_new];
+
+                bool locked_new_key = false;
+                int cmp;
+                if (idx_new == new_keys.size) {
+                    cmp = -1;
+                } else if (idx_old == old_keys.size) {
+                    cmp = +1;
+                } else {
+                    ft_compare_func cmpfun = toku_db_get_compare_fun(db);
+                    cmp = cmpfun(db, curr_old_key, curr_new_key);
                 }
 
-                // lock old key
-                if (db->i->lt && !(lock_flags[which_db] & DB_PRELOCKED_WRITE)) {
-                    r = toku_db_get_point_write_lock(db, txn, &curr_old_key);
+                bool do_del = false;
+                bool do_put = false;
+                bool do_skip = false;
+                if (cmp > 0) { // New key does not exist in old array
+                    //Check overwrite constraints only in the case where the keys are not equal
+                    //(new key is alone/not equal to old key)
+                    // If the keys are equal, then we do not care of the flag is DB_NOOVERWRITE or 0
+                    r = db_put_check_overwrite_constraint(db, txn,
+                                                          curr_new_key,
+                                                          lock_flags[which_db], remaining_flags[which_db]);
                     if (r != 0) goto cleanup;
+                    if (remaining_flags[which_db] == DB_NOOVERWRITE) {
+                        locked_new_key = true;
+                    }
+
+                    if (remaining_flags[which_db] == DB_NOOVERWRITE_NO_ERROR) {
+                        //update_multiple does not support delaying the no error, since we would
+                        //have to log the flag in the put_multiple.
+                        r = EINVAL; goto cleanup;
+                    }
+                    do_put = true;
+                } else if (cmp < 0) {
+                    // lock old key only when it does not exist in new array
+                    // otherwise locking new key takes care of this
+                    if (db->i->lt && !(lock_flags[which_db] & DB_PRELOCKED_WRITE)) {
+                        r = toku_db_get_point_write_lock(db, txn, curr_old_key);
+                        if (r != 0) goto cleanup;
+                    }
+                    do_del = true;
+                } else {
+                    do_put = curr_new_val->size > 0 ||
+                                curr_old_key->size == curr_new_key->size ||
+                                memcmp(curr_old_key->data, curr_new_key->data, curr_old_key->size);
+                    do_skip = !do_put;
                 }
+                // Check put size constraints and insert new key only if keys are unequal (byte for byte) or there is a val
+                // We assume any val.size > 0 as unequal (saves on generating old val)
+                //      (allows us to avoid generating the old val)
+                // we assume that any new vals with size > 0 are different than the old val
+                // if (!key_eq || !(dbt_cmp(&vals[which_db], &vals[which_db + num_dbs]) == 0)) { /* ... */ }
+                if (do_put) {
+                    r = db_put_check_size_constraints(db, curr_new_key, curr_new_val);
+                    if (r != 0) goto cleanup;
+
+                    // lock new key unless already locked
+                    if (db->i->lt && !(lock_flags[which_db] & DB_PRELOCKED_WRITE) && !locked_new_key) {
+                        r = toku_db_get_point_write_lock(db, txn, curr_new_key);
+                        if (r != 0) goto cleanup;
+                    }
+                }
+
+                if (do_skip) {
+                    paranoid_invariant(cmp == 0);
+                    paranoid_invariant(!do_put);
+                    paranoid_invariant(!do_del);
+
+                    num_skip++;
+                    idx_old++;
+                    idx_new++;
+                } else if (do_put) {
+                    paranoid_invariant(cmp >= 0);
+                    paranoid_invariant(!do_skip);
+                    paranoid_invariant(!do_del);
+
+                    num_put++;
+                    if (idx_new != idx_new_used) {
+                        swap_dbts(&new_keys.dbts[idx_new_used], &new_keys.dbts[idx_new]);
+                        swap_dbts(&new_vals.dbts[idx_new_used], &new_vals.dbts[idx_new]);
+                    }
+                    idx_new++;
+                    idx_new_used++;
+                    if (cmp == 0) {
+                        idx_old++;
+                    }
+                } else {
+                    invariant(do_del);
+                    paranoid_invariant(cmp < 0);
+                    paranoid_invariant(!do_skip);
+                    paranoid_invariant(!do_put);
+
+                    num_del++;
+                    if (idx_old != idx_old_used) {
+                        swap_dbts(&old_keys.dbts[idx_old_used], &old_keys.dbts[idx_old]);
+                    }
+                    idx_old++;
+                    idx_old_used++;
+                }
+            }
+            old_keys.size = idx_old_used;
+            new_keys.size = idx_new_used;
+            new_vals.size = idx_new_used;
+
+            if (num_del > 0) {
                 del_dbs[n_del_dbs] = db;
                 del_fts[n_del_dbs] = db->i->ft_handle;
-                del_keys[n_del_dbs] = curr_old_key;
+                del_key_arrays[n_del_dbs] = old_keys;
                 n_del_dbs++;
-                
             }
-
-            // we take a shortcut and avoid generating the old val
-            // we assume that any new vals with size > 0 are different than the old val
-            // if (!key_eq || !(dbt_cmp(&vals[which_db], &vals[which_db + num_dbs]) == 0)) { /* ... */ }
-            if (!key_bytes_eq || curr_new_val.size > 0) {
-                r = db_put_check_size_constraints(db, &curr_new_key, &curr_new_val);
-                if (r != 0) goto cleanup;
-
-                // lock new key
-                if (db->i->lt && !(lock_flags[which_db] & DB_PRELOCKED_WRITE)) {
-                    r = toku_db_get_point_write_lock(db, txn, &curr_new_key);
-                    if (r != 0) goto cleanup;
-                }
+            if (num_put > 0) {
                 put_dbs[n_put_dbs] = db;
                 put_fts[n_put_dbs] = db->i->ft_handle;
-                put_keys[n_put_dbs] = curr_new_key;
-                put_vals[n_put_dbs] = curr_new_val;
+                put_key_arrays[n_put_dbs] = new_keys;
+                put_val_arrays[n_put_dbs] = new_vals;
                 n_put_dbs++;
+                if (num_put < idx_new) {
+                    // Can have data loss if we log del_multiple but log just the explicit puts.
+                    force_log_put_multiple = true;
+                }
             }
         }
         if (indexer) {
@@ -966,23 +1070,29 @@ env_update_multiple(DB_ENV *env, DB *src_db, DB_TXN *txn,
         }
         toku_multi_operation_client_lock();
         if (r == 0 && n_del_dbs > 0) {
-            if (n_del_dbs == 1) {
-                log_del_single(txn, del_fts[0], &del_keys[0]);
+            if (n_del_dbs == 1 && del_key_arrays[0].size == 1) {
+                log_del_single(txn, del_fts[0], &del_key_arrays[0].dbts[0]);
             } else {
-                log_del_multiple(txn, src_db, old_src_key, old_src_data, n_del_dbs, del_fts, del_keys);
+                log_del_multiple(txn, src_db, old_src_key, old_src_data, n_del_dbs, del_fts, del_key_arrays);
             }
             if (r == 0) {
-                r = do_del_multiple(txn, n_del_dbs, del_dbs, del_keys, src_db, old_src_key);
+                r = do_del_multiple(txn, n_del_dbs, del_dbs, del_key_arrays, src_db, old_src_key);
             }
         }
 
+        //TODO: 26 Check interaction of logging & recovery with indexer
+        //         We reduce the puts/deletes during regular runtime.. but might log the full 'put/del'_multiple
+        //         (Potential, but maybe impossible)
+        //          Could insert more things during recovery into a 'hot index' than during original.
         if (r == 0 && n_put_dbs > 0) {
-            if (n_put_dbs == 1)
-                log_put_single(txn, put_fts[0], &put_keys[0], &put_vals[0]);
-            else
+            if (n_put_dbs == 1 && put_key_arrays[0].size == 1 && !force_log_put_multiple) {
+                log_put_single(txn, put_fts[0], &put_key_arrays[0].dbts[0], &put_val_arrays[0].dbts[0]);
+            }
+            else {
                 log_put_multiple(txn, src_db, new_src_key, new_src_data, n_put_dbs, put_fts);
+            }
             if (r == 0)
-                r = do_put_multiple(txn, n_put_dbs, put_dbs, put_keys, put_vals, src_db, new_src_key);
+                r = do_put_multiple(txn, n_put_dbs, put_dbs, put_key_arrays, put_val_arrays, src_db, new_src_key);
         }
         toku_multi_operation_client_unlock();
         if (indexer) {
@@ -996,7 +1106,6 @@ cleanup:
     else
         STATUS_VALUE(YDB_LAYER_NUM_MULTI_UPDATES_FAIL) += num_dbs;  // accountability 
     return r;
-#endif
 }
 
 int 
