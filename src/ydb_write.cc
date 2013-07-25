@@ -587,15 +587,8 @@ env_del_multiple(
         toku_indexer_lock(indexer);
     }
     toku_multi_operation_client_lock();
-    if (num_dbs == 1 && del_keys[0].size == 1) {
-        log_del_single(txn, brts[0], &del_keys[0].dbts[0]);
-    }
-    else {
-        log_del_multiple(txn, src_db, src_key, src_val, num_dbs, brts, del_keys);
-    }
-    if (r == 0) {
-        r = do_del_multiple(txn, num_dbs, db_array, del_keys, src_db, src_key);
-    }
+    log_del_multiple(txn, src_db, src_key, src_val, num_dbs, brts, del_keys);
+    r = do_del_multiple(txn, num_dbs, db_array, del_keys, src_db, src_key);
     toku_multi_operation_client_unlock();
     if (indexer) {
         toku_indexer_unlock(indexer);
@@ -763,15 +756,8 @@ env_put_multiple_internal(
         toku_indexer_lock(indexer);
     }
     toku_multi_operation_client_lock();
-    if (num_dbs == 1 && put_keys[0].size == 1) {
-        log_put_single(txn, brts[0], &put_keys[0].dbts[0], &put_vals[0].dbts[0]);
-    }
-    else {
-        log_put_multiple(txn, src_db, src_key, src_val, num_dbs, brts);
-    }
-    if (r == 0) {
-        r = do_put_multiple(txn, num_dbs, db_array, put_keys, put_vals, src_db, src_key);
-    }
+    log_put_multiple(txn, src_db, src_key, src_val, num_dbs, brts);
+    r = do_put_multiple(txn, num_dbs, db_array, put_keys, put_vals, src_db, src_key);
     toku_multi_operation_client_unlock();
     if (indexer) {
         toku_indexer_unlock(indexer);
@@ -792,6 +778,8 @@ static void swap_dbts(DBT *a, DBT *b) {
     *b = c;
 }
 
+//TODO: 26 Add comment in API description about.. new val.size being generated as '0' REQUIRES old_val.size == 0
+//
 int
 env_update_multiple(DB_ENV *env, DB *src_db, DB_TXN *txn,
                     DBT *old_src_key, DBT *old_src_data,
@@ -849,10 +837,6 @@ env_update_multiple(DB_ENV *env, DB *src_db, DB_TXN *txn,
             lock_flags[which_db] = get_prelocked_flags(flags_array[which_db]);
             remaining_flags[which_db] = flags_array[which_db] & ~lock_flags[which_db];
 
-            // keys[0..num_dbs-1] are the new keys
-            // keys[num_dbs..2*num_dbs-1] are the old keys
-            // vals[0..num_dbs-1] are the new vals
-
             if (db == src_db) {
                 // Copy the old keys
                 old_key_arrays[which_db].size = old_key_arrays[which_db].capacity = 1;
@@ -864,16 +848,19 @@ env_update_multiple(DB_ENV *env, DB *src_db, DB_TXN *txn,
 
                 new_val_arrays[which_db].size = new_val_arrays[which_db].capacity = 1;
                 new_val_arrays[which_db].dbts = new_src_data;
-            }
-            else {
+            } else {
+                // keys[0..num_dbs-1] are the new keys
+                // keys[num_dbs..2*num_dbs-1] are the old keys
+                // vals[0..num_dbs-1] are the new vals
+
                 // Generate the old keys
                 r = env->i->generate_row_for_put(db, src_db, &keys[which_db + num_dbs], NULL, old_src_key, old_src_data);
                 if (r != 0) goto cleanup;
 
                 paranoid_invariant(keys[which_db+num_dbs].size <= keys[which_db+num_dbs].capacity);
                 old_key_arrays[which_db] = keys[which_db+num_dbs];
-                // Generate the new keys and vals
 
+                // Generate the new keys and vals
                 r = env->i->generate_row_for_put(db, src_db, &keys[which_db], &vals[which_db], new_src_key, new_src_data);
                 if (r != 0) goto cleanup;
 
@@ -884,47 +871,6 @@ env_update_multiple(DB_ENV *env, DB *src_db, DB_TXN *txn,
                 new_key_arrays[which_db] = keys[which_db];
                 new_val_arrays[which_db] = vals[which_db];
             }
-            // Cases
-            //  - > 0 old keys, 0 new keys === PURE DELETE
-            //  - old keys > new_keys      === Either PURE DELETE or merge
-            //  - = 0 old keys, > 0 new keys == PURE INSERT
-            //  - old keys < new_keys        == Either pure insert or merge
-            //  - old keys = new_keys        == merge?
-            // This may not be the best because I may have to duplicate code in the while with 'after'
-            //
-            // TODO: 26 verify that API requires that all old keys/vals (including generated) actually exist in DB
-            // INITIAL GOAL FOR 'merge':
-            //      for each KEY:
-            //          case OLD key
-            //              PREPARE to Delete key
-            //                  write lock on old key
-            //          case NEW key
-            //              PREPARE to insert key
-            //                  db_put_check_overwrite_constraint
-            //                  write lock on new key (if above did not do it)
-            //                  db_put_check_size_constraints on new key/val
-            //          case Both key BYTE **UN**EQUAL
-            //              PREPARE to insert key
-            //                  write lock on new key (if above did not do it)
-            //                  db_put_check_size_constraints on new key/val
-            //              Will delete+insert
-            //          case Both key BYTE EQUAL, val size == 0
-            //              DO NOTHING
-            //          case Both key BYTE EQUAL, val size > 0
-            //              PREPARE to insert key
-            //                  write lock on new key (if above did not do it)
-            //                  db_put_check_size_constraints on new key/val
-            //              Will delete+insert
-            //             
-            //                  
-            //      For each NEW KEY that does not match(cmp) an OLD key:
-            //          db_put_check_overwrite_constraint
-            //          get point write lock (if not DB_NOOVERWRITE, because we already got lock)
-            //      For each NEW KEY that does not match(bytes) an old KEY
-            //          db_put_check_size_constraints
-            //      For each OLD key that does not match a NEW KEY:
-            //          get point write lock
-            //          
             DBT_ARRAY &old_keys = old_key_arrays[which_db];
             DBT_ARRAY &new_keys = new_key_arrays[which_db];
             DBT_ARRAY &new_vals = new_val_arrays[which_db];
@@ -932,14 +878,14 @@ env_update_multiple(DB_ENV *env, DB *src_db, DB_TXN *txn,
             uint32_t num_skip = 0;
             uint32_t num_del = 0;
             uint32_t num_put = 0;
+            // Next index in old_keys to look at
             uint32_t idx_old = 0;
+            // Next index in new_keys/new_vals to look at
             uint32_t idx_new = 0;
             uint32_t idx_old_used = 0;
             uint32_t idx_new_used = 0;
-            //TODO redo the condition
             while (idx_old < old_keys.size || idx_new < new_keys.size) {
                 // Check for old key, both, new key
-                // Only old key
                 DBT *curr_old_key = &old_keys.dbts[idx_old];
                 DBT *curr_new_key = &new_keys.dbts[idx_new];
                 DBT *curr_new_val = &new_vals.dbts[idx_new];
@@ -1006,6 +952,8 @@ env_update_multiple(DB_ENV *env, DB *src_db, DB_TXN *txn,
                     }
                 }
 
+                // TODO: 26 Add comments explaining squish and why not just use another stack array
+                // Add more comments to explain this if elseif else well
                 if (do_skip) {
                     paranoid_invariant(cmp == 0);
                     paranoid_invariant(!do_put);
@@ -1070,29 +1018,17 @@ env_update_multiple(DB_ENV *env, DB *src_db, DB_TXN *txn,
         }
         toku_multi_operation_client_lock();
         if (r == 0 && n_del_dbs > 0) {
-            if (n_del_dbs == 1 && del_key_arrays[0].size == 1) {
-                log_del_single(txn, del_fts[0], &del_key_arrays[0].dbts[0]);
-            } else {
-                log_del_multiple(txn, src_db, old_src_key, old_src_data, n_del_dbs, del_fts, del_key_arrays);
-            }
-            if (r == 0) {
-                r = do_del_multiple(txn, n_del_dbs, del_dbs, del_key_arrays, src_db, old_src_key);
-            }
+            log_del_multiple(txn, src_db, old_src_key, old_src_data, n_del_dbs, del_fts, del_key_arrays);
+            r = do_del_multiple(txn, n_del_dbs, del_dbs, del_key_arrays, src_db, old_src_key);
         }
 
-        //TODO: 26 Check interaction of logging & recovery with indexer
-        //         We reduce the puts/deletes during regular runtime.. but might log the full 'put/del'_multiple
-        //         (Potential, but maybe impossible)
-        //          Could insert more things during recovery into a 'hot index' than during original.
         if (r == 0 && n_put_dbs > 0) {
-            if (n_put_dbs == 1 && put_key_arrays[0].size == 1 && !force_log_put_multiple) {
-                log_put_single(txn, put_fts[0], &put_key_arrays[0].dbts[0], &put_val_arrays[0].dbts[0]);
-            }
-            else {
-                log_put_multiple(txn, src_db, new_src_key, new_src_data, n_put_dbs, put_fts);
-            }
-            if (r == 0)
-                r = do_put_multiple(txn, n_put_dbs, put_dbs, put_key_arrays, put_val_arrays, src_db, new_src_key);
+            // We sometimes skip some keys for del/put during runtime, but during recovery
+            // we (may) delete ALL the keys for a given DB.  Therefore we must put ALL the keys during
+            // recovery so we don't end up losing data.
+            // So unlike env->put_multiple, we ONLY log a 'put_multiple' log entry.
+            log_put_multiple(txn, src_db, new_src_key, new_src_data, n_put_dbs, put_fts);
+            r = do_put_multiple(txn, n_put_dbs, put_dbs, put_key_arrays, put_val_arrays, src_db, new_src_key);
         }
         toku_multi_operation_client_unlock();
         if (indexer) {
