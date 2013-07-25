@@ -986,7 +986,7 @@ env_update_multiple(DB_ENV *env, DB *src_db, DB_TXN *txn,
                     do_del = true;
                 } else {
                     do_put = curr_new_val->size > 0 ||
-                                curr_old_key->size == curr_new_key->size ||
+                                curr_old_key->size != curr_new_key->size ||
                                 memcmp(curr_old_key->data, curr_new_key->data, curr_old_key->size);
                     do_skip = !do_put;
                 }
