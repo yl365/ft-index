@@ -603,12 +603,6 @@ cleanup:
 }
 
 static void
-log_put_single(DB_TXN *txn, FT_HANDLE brt, const DBT *key, const DBT *val) {
-    TOKUTXN ttxn = db_txn_struct_i(txn)->tokutxn;
-    toku_ft_log_put(ttxn, brt, key, val);
-}
-
-static void
 log_put_multiple(DB_TXN *txn, DB *src_db, const DBT *src_key, const DBT *src_val, uint32_t num_dbs, FT_HANDLE brts[]) {
     if (num_dbs > 0) {
         TOKUTXN ttxn = db_txn_struct_i(txn)->tokutxn;
@@ -623,34 +617,36 @@ do_put_multiple(DB_TXN *txn, uint32_t num_dbs, DB *db_array[], DBT_ARRAY keys[],
     for (uint32_t which_db = 0; which_db < num_dbs; which_db++) {
         DB *db = db_array[which_db];
 
-        paranoid_invariant(keys[which_db].size == vals[which_db].size);
+        invariant(keys[which_db].size == vals[which_db].size);
         paranoid_invariant(keys[which_db].size <= keys[which_db].capacity);
         paranoid_invariant(vals[which_db].size <= vals[which_db].capacity);
 
-        bool do_put = true;
-        DB_INDEXER *indexer = toku_db_get_indexer(db);
-        if (indexer) { // if this db is the index under construction
-            DB *indexer_src_db = toku_indexer_get_src_db(indexer);
-            invariant(indexer_src_db != NULL);
-            const DBT *indexer_src_key;
-            if (src_db == indexer_src_db)
-                indexer_src_key = src_key;
-            else {
-                uint32_t which_src_db = lookup_src_db(num_dbs, db_array, indexer_src_db);
-                invariant(which_src_db < num_dbs);
-                // The indexer src db must have exactly one item or we don't know how to continue.
-                invariant(keys[which_src_db].size == 1);
-                indexer_src_key = &keys[which_src_db].dbts[0];
+        if (keys[which_db].size > 0) {
+            bool do_put = true;
+            DB_INDEXER *indexer = toku_db_get_indexer(db);
+            if (indexer) { // if this db is the index under construction
+                DB *indexer_src_db = toku_indexer_get_src_db(indexer);
+                invariant(indexer_src_db != NULL);
+                const DBT *indexer_src_key;
+                if (src_db == indexer_src_db)
+                    indexer_src_key = src_key;
+                else {
+                    uint32_t which_src_db = lookup_src_db(num_dbs, db_array, indexer_src_db);
+                    invariant(which_src_db < num_dbs);
+                    // The indexer src db must have exactly one item or we don't know how to continue.
+                    invariant(keys[which_src_db].size == 1);
+                    indexer_src_key = &keys[which_src_db].dbts[0];
+                }
+                do_put = !toku_indexer_is_key_right_of_le_cursor(indexer, indexer_src_key);
             }
-            do_put = !toku_indexer_is_key_right_of_le_cursor(indexer, indexer_src_key);
-        }
-        if (do_put) {
-            for (uint32_t i = 0; i < keys[which_db].size; i++) {
-                // if db is being indexed by an indexer, then put into that db if the src key is to the left or equal to the
-                // indexers cursor.  we have to get the src_db from the indexer and find it in the db_array.
-                toku_ft_maybe_insert(db->i->ft_handle,
-                                     &keys[which_db].dbts[i], &vals[which_db].dbts[i],
-                                     ttxn, false, ZERO_LSN, false, FT_INSERT);
+            if (do_put) {
+                for (uint32_t i = 0; i < keys[which_db].size; i++) {
+                    // if db is being indexed by an indexer, then put into that db if the src key is to the left or equal to the
+                    // indexers cursor.  we have to get the src_db from the indexer and find it in the db_array.
+                    toku_ft_maybe_insert(db->i->ft_handle,
+                                         &keys[which_db].dbts[i], &vals[which_db].dbts[i],
+                                         ttxn, false, ZERO_LSN, false, FT_INSERT);
+                }
             }
         }
     }
@@ -830,7 +826,6 @@ env_update_multiple(DB_ENV *env, DB *src_db, DB_TXN *txn,
         uint32_t lock_flags[num_dbs];
         uint32_t remaining_flags[num_dbs];
 
-        bool force_log_put_multiple = false;
         for (uint32_t which_db = 0; which_db < num_dbs; which_db++) {
             DB *db = db_array[which_db];
 
@@ -1001,16 +996,15 @@ env_update_multiple(DB_ENV *env, DB *src_db, DB_TXN *txn,
                 del_key_arrays[n_del_dbs] = old_keys;
                 n_del_dbs++;
             }
-            if (num_put > 0) {
+            // If we put none, but delete some, but not all, then we need the log_put_multiple to happen.
+            // Include this db in the put_dbs so we do log_put_multiple.
+            // do_put_multiple will be a no-op for this db.
+            if (num_put > 0 || (num_del > 0 && num_skip > 0)) {
                 put_dbs[n_put_dbs] = db;
                 put_fts[n_put_dbs] = db->i->ft_handle;
                 put_key_arrays[n_put_dbs] = new_keys;
                 put_val_arrays[n_put_dbs] = new_vals;
                 n_put_dbs++;
-                if (num_put < idx_new) {
-                    // Can have data loss if we log del_multiple but log just the explicit puts.
-                    force_log_put_multiple = true;
-                }
             }
         }
         if (indexer) {
