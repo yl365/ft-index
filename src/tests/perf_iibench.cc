@@ -276,6 +276,7 @@ static int UU() iibench_put_op(DB_TXN *txn, ARG arg, void *operation_extra, void
 cleanup:
     for (int i = 0; i < num_dbs; i++) {
         toku_dbt_array_destroy(&mult_key_dbt[i]);
+        toku_dbt_array_destroy(&mult_val_dbt[i]);
     }
     return r;
 }
