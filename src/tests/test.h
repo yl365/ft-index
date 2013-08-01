@@ -465,8 +465,10 @@ static int env_put_multiple_test_no_array(
     }
     r = env->put_multiple(env, src_db, txn, src_key, src_val, num_dbs, db_array, &key_arrays[0], &val_arrays[0], flags_array);
     for (uint32_t i = 0; i < num_dbs; i++) {
-        toku_dbt_array_init(&key_arrays[i], 1);
-        toku_dbt_array_init(&val_arrays[i], 1);
+        invariant(key_arrays[i].size == 1);
+        invariant(key_arrays[i].capacity == 1);
+        invariant(val_arrays[i].size == 1);
+        invariant(val_arrays[i].capacity == 1);
         keys[i] = key_arrays[i].dbts[0];
         vals[i] = val_arrays[i].dbts[0];
         toku_dbt_array_destroy_shallow(&key_arrays[i]);
@@ -495,7 +497,8 @@ static int env_del_multiple_test_no_array(
     }
     r = env->del_multiple(env, src_db, txn, src_key, src_val, num_dbs, db_array, &key_arrays[0], flags_array);
     for (uint32_t i = 0; i < num_dbs; i++) {
-        toku_dbt_array_init(&key_arrays[i], 1);
+        invariant(key_arrays[i].size == 1);
+        invariant(key_arrays[i].capacity == 1);
         keys[i] = key_arrays[i].dbts[0];
         toku_dbt_array_destroy_shallow(&key_arrays[i]);
     }
