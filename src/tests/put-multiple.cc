@@ -336,8 +336,8 @@ run_test(int ndbs, int nrows) {
 int
 test_main(int argc, char * const argv[]) {
     int r;
-    int ndbs = 2;
-    int nrows = 2;
+    int ndbs = 16;
+    int nrows = 100;
 
     // parse_args(argc, argv);
     for (int i = 1; i < argc; i++) {
