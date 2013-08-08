@@ -259,9 +259,17 @@ checkpoint_safe_checkpoint_unlock(void) {
 
 void 
 toku_multi_operation_client_lock(void) {
-    if (locked_mo)
+    bool maybe_locked_mo = locked_mo;
+    uint64_t tstart;
+    if (maybe_locked_mo) {
         (void) toku_sync_fetch_and_add(&STATUS_VALUE(CP_CLIENT_WAIT_ON_MO), 1);
+        tstart = toku_current_time_microsec();
+    }
     toku_pthread_rwlock_rdlock(&multi_operation_lock);   
+    if (maybe_locked_mo) {
+        uint64_t tend = toku_current_time_microsec();
+        fprintf(stderr, "%s:%u %lu\n", __FUNCTION__, __LINE__, tend - tstart);
+    }
 }
 
 void 
@@ -334,8 +342,12 @@ toku_checkpoint(CHECKPOINTER cp, TOKULOGGER logger,
     toku_ft_open_close_lock();
     
     SET_CHECKPOINT_FOOTPRINT(30);
+    fprintf(stderr, "%s:%u begin checkpoint\n", __FUNCTION__, __LINE__);
     STATUS_VALUE(CP_TIME_LAST_CHECKPOINT_BEGIN) = time(NULL);
+    uint64_t tstart = toku_current_time_microsec();
     toku_cachetable_begin_checkpoint(cp, logger);
+    uint64_t tend = toku_current_time_microsec();
+    fprintf(stderr, "%s:%u begin checkpoint time %lu\n", __FUNCTION__, __LINE__, tend - tstart);
 
     toku_ft_open_close_unlock();
     multi_operation_checkpoint_unlock();
@@ -344,6 +356,7 @@ toku_checkpoint(CHECKPOINTER cp, TOKULOGGER logger,
     if (callback_f) {
         callback_f(extra);      // callback is called with checkpoint_safe_lock still held
     }
+    fprintf(stderr, "%s:%u end checkpoint start\n", __FUNCTION__, __LINE__);
     toku_cachetable_end_checkpoint(cp, logger, callback2_f, extra2);
 
     SET_CHECKPOINT_FOOTPRINT(50);
@@ -360,6 +373,7 @@ toku_checkpoint(CHECKPOINTER cp, TOKULOGGER logger,
     STATUS_VALUE(CP_FOOTPRINT) = 0;
 
     checkpoint_safe_checkpoint_unlock();
+    fprintf(stderr, "%s:%u end checkpoint\n", __FUNCTION__, __LINE__);
     return 0;
 }
 

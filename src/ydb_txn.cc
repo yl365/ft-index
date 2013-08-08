@@ -161,6 +161,8 @@ toku_txn_commit(DB_TXN * txn, uint32_t flags,
     int nosync = (flags & DB_TXN_NOSYNC)!=0 || (db_txn_struct_i(txn)->flags&DB_TXN_NOSYNC);
     flags &= ~DB_TXN_NOSYNC;
 
+    uint64_t stamps[4];
+    stamps[0] = toku_current_time_microsec();
     int r;
     if (flags!=0) {
         // frees the tokutxn
@@ -170,6 +172,7 @@ toku_txn_commit(DB_TXN * txn, uint32_t flags,
         r = toku_txn_commit_txn(db_txn_struct_i(txn)->tokutxn, nosync,
                                 poll, poll_extra);
     }
+    stamps[1] = toku_current_time_microsec();
     if (r!=0 && !toku_env_is_panicked(txn->mgrp)) {
         env_panic(txn->mgrp, r, "Error during commit.\n");
     }
@@ -198,11 +201,21 @@ toku_txn_commit(DB_TXN * txn, uint32_t flags,
             toku_multi_operation_client_unlock();
         }
     }
+    stamps[2] = toku_current_time_microsec();
     toku_txn_maybe_fsync_log(logger, do_fsync_lsn, do_fsync);
     if (flags!=0) {
         r = EINVAL;
         goto cleanup;
     }
+    stamps[3] = toku_current_time_microsec();
+    if (stamps[3] - stamps[0] > 1000000) {
+        fprintf(stderr, "%s:%u %" PRIu64 " %" PRIu64 " %" PRIu64 " %" PRIu64 "\n", __FUNCTION__, __LINE__, 
+                stamps[3] - stamps[0],
+                stamps[1] - stamps[0],
+                stamps[2] - stamps[1],
+                stamps[3] - stamps[2]);
+    }
+
 cleanup:
     toku_txn_destroy(txn);
     return r;
