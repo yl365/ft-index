@@ -529,8 +529,11 @@ write_outbuf_to_logfile (TOKULOGGER logger, LSN *fsynced_lsn)
     }
     // If the file got too big, then open a new file.
     if (logger->n_in_file > logger->lg_max) {
+        uint64_t tstart = toku_current_time_microsec();
         int r = close_and_open_logfile(logger, fsynced_lsn);
         assert_zero(r);
+        uint64_t t = toku_current_time_microsec();
+        fprintf(stderr, "%s:%u %" PRIu64 "\n", __FUNCTION__, __LINE__, t - tstart);
     }
 }
 
