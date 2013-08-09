@@ -140,9 +140,7 @@ put_callback(DB *dest_db, DB *src_db, DBT_ARRAY *dest_keys, DBT_ARRAY *dest_vals
     uint8_t dbnum;
     assert(dest_db->descriptor->dbt.size == sizeof dbnum);
     memcpy(&dbnum, dest_db->descriptor->dbt.data, sizeof dbnum);
-#if 0 // why
-    assert(dbnum < src_val->size / sizeof (int));
-#endif
+
     assert(dbnum > 0); // Does not get called for primary.
     assert(dest_db != src_db);
 
@@ -151,11 +149,12 @@ put_callback(DB *dest_db, DB *src_db, DBT_ARRAY *dest_keys, DBT_ARRAY *dest_vals
     uint8_t num_keys = get_num_keys(i, dbnum);
 
     toku_dbt_array_resize(dest_keys, num_keys);
-    toku_dbt_array_resize(dest_vals, num_keys);
+    if (dest_vals) {
+        toku_dbt_array_resize(dest_vals, num_keys);
+    }
 
     for (uint8_t which = 0; which < num_keys; ++which) {
         DBT *dest_key = &dest_keys->dbts[which];
-        DBT *dest_val = &dest_vals->dbts[which];
 
         assert(dest_key->flags == DB_DBT_REALLOC);
         {
@@ -167,11 +166,20 @@ put_callback(DB *dest_db, DB *src_db, DBT_ARRAY *dest_keys, DBT_ARRAY *dest_vals
             dest_key->size = sizeof(uint32_t);
         }
         *(uint32_t*)dest_key->data = get_key(i, dbnum, which);
-        dest_val->flags = 0;
-        dest_val->data = nullptr;
-        dest_val->size = 0;
+
+        if (dest_vals) {
+            DBT *dest_val = &dest_vals->dbts[which];
+            dest_val->flags = 0;
+            dest_val->data = nullptr;
+            dest_val->size = 0;
+        }
     }
     return 0;
+}
+
+static int
+del_callback(DB *dest_db, DB *src_db, DBT_ARRAY *dest_keys, const DBT *src_key, const DBT *src_data) {
+    return put_callback(dest_db, src_db, dest_keys, NULL, src_key, src_data);
 }
 
 static void
@@ -266,7 +274,34 @@ verify(DB_ENV *env, DB *db[], int ndbs, int nrows) {
 }
 
 static void
-populate(DB_ENV *env, DB *db[], uint8_t ndbs, uint16_t nrows) {
+verify_empty(DB_ENV *env, DB *db) {
+    int r;
+    DB_TXN *txn = NULL;
+    r = env->txn_begin(env, NULL, &txn, 0); assert_zero(r);
+
+    DBC *cursor = NULL;
+    r = db->cursor(db, txn, &cursor, 0); assert_zero(r);
+    int i;
+    for (i = 0; ; i++) {
+        DBT key; memset(&key, 0, sizeof key);
+        DBT val; memset(&val, 0, sizeof val);
+        r = cursor->c_get(cursor, &key, &val, DB_NEXT);
+        if (r != 0)
+            break;
+    }
+    assert_zero(i);
+    r = cursor->c_close(cursor); assert_zero(r);
+    r = txn->commit(txn, 0); assert_zero(r);
+}
+
+static void
+verify_del(DB_ENV *env, DB *db[], int ndbs) {
+    for (int dbnum = 0; dbnum < ndbs; dbnum++)
+        verify_empty(env, db[dbnum]);
+}
+
+static void
+populate(DB_ENV *env, DB *db[], uint8_t ndbs, uint16_t nrows, bool del) {
     int r;
     DB_TXN *txn = NULL;
     r = env->txn_begin(env, NULL, &txn, 0); assert_zero(r);
@@ -285,7 +320,11 @@ populate(DB_ENV *env, DB *db[], uint8_t ndbs, uint16_t nrows) {
         DBT pri_key; dbt_init(&pri_key, &k, sizeof k);
         DBT pri_val; dbt_init(&pri_val, &v[0], sizeof v);
         uint32_t flags[ndbs]; memset(flags, 0, sizeof flags);
-        r = env->put_multiple(env, db[0], txn, &pri_key, &pri_val, ndbs, db, key_arrays, val_arrays, flags); 
+        if (del) {
+            r = env->del_multiple(env, db[0], txn, &pri_key, &pri_val, ndbs, db, key_arrays, flags);
+        } else {
+            r = env->put_multiple(env, db[0], txn, &pri_key, &pri_val, ndbs, db, key_arrays, val_arrays, flags);
+        }
         assert_zero(r);
         for (int dbnum = 0; dbnum < ndbs; dbnum++)
             verify_locked(env, db[dbnum], dbnum, i);
@@ -305,6 +344,7 @@ run_test(int ndbs, int nrows) {
     r = db_env_create(&env, 0); assert_zero(r);
 
     r = env->set_generate_row_callback_for_put(env, put_callback); assert_zero(r);
+    r = env->set_generate_row_callback_for_del(env, del_callback); assert_zero(r);
 
     r = env->open(env, TOKU_TEST_FILENAME, DB_INIT_MPOOL|DB_CREATE|DB_THREAD |DB_INIT_LOCK|DB_INIT_LOG|DB_INIT_TXN|DB_PRIVATE, S_IRWXU+S_IRWXG+S_IRWXO); assert_zero(r);
 
@@ -323,9 +363,13 @@ run_test(int ndbs, int nrows) {
         });
     }
 
-    populate(env, db, ndbs, nrows);
+    populate(env, db, ndbs, nrows, false);
 
     verify(env, db, ndbs, nrows);
+
+    populate(env, db, ndbs, nrows, true);
+
+    verify_del(env, db, ndbs);
 
     for (int dbnum = 0; dbnum < ndbs; dbnum++) 
         r = db[dbnum]->close(db[dbnum], 0); assert_zero(r);
