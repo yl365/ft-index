@@ -1096,19 +1096,18 @@ static int toku_recover_enq_delete_multiple (struct logtype_enq_delete_multiple 
         if (l->src_filenum.fileid == FILENUM_NONE.fileid)
             assert(r==DB_NOTFOUND);
         else {
-            if (r == 0)
+            if (r == 0) {
                 src_db = &tuple->fake_db;
-            else
+            } else {
                 do_deletes = false; // src file was probably deleted, #3129
+            }
         }
     }
 
     if (do_deletes) {
         DBT src_key, src_val;
-        DBT_ARRAY dest_keys;
         toku_fill_dbt(&src_key, l->src_key.data, l->src_key.len);
         toku_fill_dbt(&src_val, l->src_val.data, l->src_val.len);
-        toku_dbt_array_init(&dest_keys, 1);
 
         for (uint32_t file = 0; file < l->dest_filenums.num; file++) {
             struct file_map_tuple *tuple = NULL;
@@ -1116,14 +1115,22 @@ static int toku_recover_enq_delete_multiple (struct logtype_enq_delete_multiple 
             if (r==0) {
                 // We found the cachefile.  (maybe) Do the delete.
                 DB *db = &tuple->fake_db;
-                r = renv->generate_row_for_del(db, src_db, &dest_keys, &src_key, &src_val);
-                assert(r==0);
-                for (uint32_t i = 0; i < dest_keys.size; i++) {
-                    toku_ft_maybe_delete(tuple->ft_handle, &dest_keys.dbts[i], txn, true, l->lsn, false);
+
+                DBT_ARRAY key_array;
+                if (db != src_db) {
+                    r = renv->generate_row_for_del(db, src_db, &renv->dest_keys, &src_key, &src_val);
+                    assert(r==0);
+                    invariant(renv->dest_keys.size <= renv->dest_keys.capacity);
+                    key_array = renv->dest_keys;
+                } else {
+                    key_array.size = key_array.capacity = 1;
+                    key_array.dbts = &src_key;
+                }
+                for (uint32_t i = 0; i < key_array.size; i++) {
+                    toku_ft_maybe_delete(tuple->ft_handle, &key_array.dbts[i], txn, true, l->lsn, false);
                 }
             }
         }
-        toku_dbt_array_destroy(&dest_keys);
     }
 
     return 0;
