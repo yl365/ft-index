@@ -470,6 +470,8 @@ static void file_fsync_internal (int fd, uint64_t *duration_p) {
     }
     toku_sync_fetch_and_add(&toku_fsync_count, 1);
     uint64_t duration = toku_current_time_microsec() - tstart;
+    if (duration > 1000000)
+        fprintf(stderr, "%s:%u fd=%d duration=%" PRIu64 "\n", __FUNCTION__, __LINE__, fd, duration);
     toku_sync_fetch_and_add(&toku_fsync_time, duration);
     if (duration_p) {
         *duration_p = duration;
