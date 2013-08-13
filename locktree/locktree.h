@@ -343,6 +343,8 @@ public:
 
         void mutex_lock(void);
 
+        int mutex_timedlock(const struct timespec *timeout);
+
         void mutex_unlock(void);
 
         void status_init(void);

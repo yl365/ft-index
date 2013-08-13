@@ -212,6 +212,21 @@ toku_mutex_lock(toku_mutex_t *mutex) {
 #endif
 }
 
+static inline int
+toku_mutex_timedlock(toku_mutex_t *mutex, const struct timespec *timeout) {
+    int r = pthread_mutex_timedlock(&mutex->pmutex, timeout);
+    if (r == 0) {
+#if TOKU_PTHREAD_DEBUG
+        invariant(mutex->valid);
+        invariant(!mutex->locked);
+        invariant(mutex->owner == 0);
+        mutex->locked = true;
+        mutex->owner = pthread_self();
+#endif
+    }
+    return r;
+}
+
 static inline void
 toku_mutex_unlock(toku_mutex_t *mutex) {
 #if TOKU_PTHREAD_DEBUG
