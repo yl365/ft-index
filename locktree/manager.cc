@@ -398,8 +398,13 @@ int locktree::manager::memory_tracker::check_current_lock_constraints(void) {
             m_mgr->run_escalation();
             fprintf(stderr, "%d %s escalation end\n", toku_os_gettid(), __FUNCTION__);
             if (out_of_locks()) {
-                r = TOKUDB_OUT_OF_LOCKS;
+                m_mgr->run_escalation();
+                if (out_of_locks()) {
+                    r = TOKUDB_OUT_OF_LOCKS;
+                }
             }
+            m_mgr->mutex_unlock();
+            return r;
         }
         m_mgr->mutex_unlock();
         
