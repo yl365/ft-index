@@ -87,95 +87,154 @@ PATENT RIGHTS GRANT:
 
 #ident "Copyright (c) 2007-2013 Tokutek Inc.  All rights reserved."
 #ident "The technology is licensed by the Massachusetts Institute of Technology, Rutgers State University of New Jersey, and the Research Foundation of State University of New York at Stony Brook under United States of America Serial No. 11/760379 and to the patents and/or patent applications resulting from it."
+/* The goal of this test.  Make sure that inserts stay behind deletes. */
+
+
 #include "test.h"
 
-static int
-put_callback(DB *dest_db, DB *src_db, DBT_ARRAY *dest_keys, DBT_ARRAY *dest_vals, const DBT *src_key, const DBT *src_val) {
-    toku_dbt_array_resize(dest_keys, 1);
-    toku_dbt_array_resize(dest_vals, 1);
-    DBT *dest_key = &dest_keys->dbts[0];
-    DBT *dest_val = &dest_vals->dbts[0];
+#include <ft-cachetable-wrappers.h>
+#include "ft-flusher.h"
+#include "ft-flusher-internal.h"
+#include "checkpoint.h"
 
-    (void) dest_db; (void) src_db; (void) dest_key; (void) dest_val; (void) src_key; (void) src_val;
-    lazy_assert(src_db != NULL && dest_db != NULL);
+static TOKUTXN const null_txn = 0;
+static DB * const null_db = 0;
 
-    toku_free(dest_key->data);
-    dest_key->data = toku_xmemdup(src_val->data, src_val->size);
-    dest_key->ulen = dest_key->size = src_val->size;
-    dest_val->size = 0;
-    
-    return 0;
-}
+enum { NODESIZE = 1024, KSIZE=NODESIZE-100, TOKU_PSIZE=20 };
 
 static void
-run_test(void) {
+doit (void) {
+    BLOCKNUM node_leaf[3];
+    BLOCKNUM node_root;
+    
+    CACHETABLE ct;
+    FT_HANDLE t;
+
     int r;
-    DB_ENV *env = NULL;
-    r = db_env_create(&env, 0); assert_zero(r);
 
-    r = env->set_generate_row_callback_for_put(env, put_callback); assert_zero(r);
+    toku_cachetable_create(&ct, 500*1024*1024, ZERO_LSN, NULL_LOGGER);
+    unlink(TOKU_TEST_FILENAME);
+    r = toku_open_ft_handle(TOKU_TEST_FILENAME, 1, &t, NODESIZE, NODESIZE/2, TOKU_DEFAULT_COMPRESSION_METHOD, ct, null_txn, toku_builtin_compare_fun);
+    assert(r==0);
 
-    r = env->open(env, TOKU_TEST_FILENAME, DB_INIT_MPOOL|DB_CREATE|DB_THREAD |DB_INIT_LOCK|DB_INIT_LOG|DB_INIT_TXN|DB_PRIVATE, S_IRWXU+S_IRWXG+S_IRWXO); assert_zero(r);
+    toku_testsetup_initialize();  // must precede any other toku_testsetup calls
 
-    DB *src_db = NULL;
-    r = db_create(&src_db, env, 0); assert_zero(r);
-    r = src_db->open(src_db, NULL, "0.tdb", NULL, DB_BTREE, DB_AUTO_COMMIT+DB_CREATE, S_IRWXU+S_IRWXG+S_IRWXO); assert_zero(r);
+    r = toku_testsetup_leaf(t, &node_leaf[0], 1, NULL, NULL);
+    assert(r==0);
+    r = toku_testsetup_leaf(t, &node_leaf[1], 1, NULL, NULL);
+    assert(r==0);
+    r = toku_testsetup_leaf(t, &node_leaf[2], 1, NULL, NULL);
+    assert(r==0);
 
-    DB *dest_db = NULL;
-    r = db_create(&dest_db, env, 0); assert_zero(r);
-    r = dest_db->open(dest_db, NULL, "1.tdb", NULL, DB_BTREE, DB_AUTO_COMMIT+DB_CREATE, S_IRWXU+S_IRWXG+S_IRWXO); assert_zero(r);
+    int keylens[2];
+    keylens[0] = 2;
+    keylens[1] = 2;
+    char first[2];
+    first[0] = 'f';
+    first[1] = 0;
+    char second[2];
+    second[0] = 'p';
+    second[1] = 0;
 
-    DB_TXN* index_txn = NULL;
-    r = env->txn_begin(env, NULL, &index_txn , 0); assert_zero(r);
-    DB_TXN* put_txn = NULL;
-    r = env->txn_begin(env, NULL, &put_txn , 0); assert_zero(r);
+    char* keys[2];
+    keys[0] = first;
+    keys[1] = second;
+    r = toku_testsetup_nonleaf(t, 1, &node_root, 3, node_leaf, keys, keylens);
+    assert(r==0);
 
-    DBT key,data;
-    r = src_db->put(
-        src_db, 
-        put_txn,
-        dbt_init(&key,  "hello", 6),
-        dbt_init(&data, "there", 6),
+    r = toku_testsetup_root(t, node_root);
+    assert(r==0);
+
+
+    r = toku_testsetup_insert_to_nonleaf(
+        t, 
+        node_root, 
+        FT_INSERT,
+        "a",
+        2,
+        NULL,
+        0
+        );
+    r = toku_testsetup_insert_to_nonleaf(
+        t, 
+        node_root, 
+        FT_INSERT,
+        "m",
+        2,
+        NULL,
         0
         );
 
-    DB_INDEXER *indexer = NULL;
-    r = env->create_indexer(env, index_txn, &indexer, src_db, 1, &dest_db, NULL, 0); assert_zero(r);
-    r = indexer->build(indexer); assert_zero(r);        
-    r = indexer->close(indexer); assert_zero(r);
-    r = index_txn->abort(index_txn); assert_zero(r);
+    r = toku_testsetup_insert_to_nonleaf(
+        t, 
+        node_root, 
+        FT_INSERT,
+        "z",
+        2,
+        NULL,
+        0
+        );
 
-    r = put_txn->abort(put_txn); assert_zero(r);
 
+    // at this point, we have inserted three messages into
+    // the root, one in each buffer, let's verify this.
 
-    r = src_db->close(src_db, 0); assert_zero(r);
-    r = dest_db->close(dest_db, 0); assert_zero(r);
+    FTNODE node = NULL;
+    struct ftnode_fetch_extra bfe;
+    fill_bfe_for_min_read(&bfe, t->ft);
+    toku_pin_ftnode_off_client_thread(
+        t->ft, 
+        node_root,
+        toku_cachetable_hash(t->ft->cf, node_root),
+        &bfe,
+        PL_WRITE_EXPENSIVE, 
+        0,
+        NULL,
+        &node
+        );
+    assert(node->height == 1);
+    assert(node->n_children == 3);
+    assert(toku_bnc_nbytesinbuf(BNC(node, 0)) > 0);
+    assert(toku_bnc_nbytesinbuf(BNC(node, 1)) > 0);
+    assert(toku_bnc_nbytesinbuf(BNC(node, 2)) > 0);
+    toku_unpin_ftnode(t->ft, node);
 
-    r = env->close(env, 0); assert_zero(r);
+    // now let's run a hot optimize, that should only flush the middle buffer
+    DBT left;
+    toku_fill_dbt(&left, "g", 2);
+    DBT right;
+    toku_fill_dbt(&right, "n", 2);
+    r = toku_ft_hot_optimize(t, &left, &right, NULL, NULL);
+    assert(r==0);
+
+    // at this point, we have should have flushed
+    // only the middle buffer, let's verify this.
+    node = NULL;
+    fill_bfe_for_min_read(&bfe, t->ft);
+    toku_pin_ftnode_off_client_thread(
+        t->ft, 
+        node_root,
+        toku_cachetable_hash(t->ft->cf, node_root),
+        &bfe,
+        PL_WRITE_EXPENSIVE, 
+        0,
+        NULL,
+        &node
+        );
+    assert(node->height == 1);
+    assert(node->n_children == 3);
+    assert(toku_bnc_nbytesinbuf(BNC(node, 0)) > 0);
+    assert(toku_bnc_nbytesinbuf(BNC(node, 1)) == 0);
+    assert(toku_bnc_nbytesinbuf(BNC(node, 2)) > 0);
+    toku_unpin_ftnode(t->ft, node);
+
+    r = toku_close_ft_handle_nolsn(t, 0);    assert(r==0);
+    toku_cachetable_close(&ct);
 }
 
 int
-test_main(int argc, char * const argv[]) {
-    int r;
-
-    // parse_args(argc, argv);
-    for (int i = 1; i < argc; i++) {
-        char * const arg = argv[i];
-        if (strcmp(arg, "-v") == 0) {
-            verbose++;
-            continue;
-        }
-        if (strcmp(arg, "-q") == 0) {
-            verbose = 0;
-            continue;
-        }
-    }
-
-    toku_os_recursive_delete(TOKU_TEST_FILENAME);
-    r = toku_os_mkdir(TOKU_TEST_FILENAME, S_IRWXU+S_IRWXG+S_IRWXO); assert_zero(r);
-
-    run_test();
-
+test_main (int argc __attribute__((__unused__)), const char *argv[] __attribute__((__unused__))) {
+    default_parse_args(argc, argv);
+    doit();
     return 0;
 }
-

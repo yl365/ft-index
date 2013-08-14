@@ -128,6 +128,10 @@ void locktree::manager::mutex_lock(void) {
     toku_mutex_lock(&m_mutex);
 }
 
+int locktree::manager::mutex_timedlock(const struct timespec *timeout) {
+    return toku_mutex_timedlock(&m_mutex, timeout);
+}
+
 void locktree::manager::mutex_unlock(void) {
     toku_mutex_unlock(&m_mutex);
 }
@@ -334,18 +338,28 @@ void locktree::manager::memory_tracker::set_manager(manager *mgr) {
 
 int locktree::manager::memory_tracker::check_current_lock_constraints(void) {
     int r = 0;
+
+    struct timespec timeout;
+    timeout.tv_sec = 0;
+    timeout.tv_nsec = 100 * 1000 * 1000;
+
     // check if we're out of locks without the mutex first. then, grab the
     // mutex and check again. if we're still out of locks, run escalation.
     // return an error if we're still out of locks after escalation.
-    if (out_of_locks()) {
-        m_mgr->mutex_lock();
-        if (out_of_locks()) {
-            m_mgr->run_escalation();
+    while (out_of_locks()) {
+        // Wait no more than 100 milliseconds for the mutex before checking
+        // the out_of_locks() condition again.
+        int mutex_r = m_mgr->mutex_timedlock(&timeout);
+        if (mutex_r == 0) {
             if (out_of_locks()) {
-                r = TOKUDB_OUT_OF_LOCKS;
+                m_mgr->run_escalation();
+                if (out_of_locks()) {
+                    r = TOKUDB_OUT_OF_LOCKS;
+                }
             }
+            m_mgr->mutex_unlock();
+            return r;
         }
-        m_mgr->mutex_unlock();
     }
     return r;
 }
