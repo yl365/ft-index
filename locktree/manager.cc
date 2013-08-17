@@ -346,7 +346,15 @@ int locktree::manager::memory_tracker::check_current_lock_constraints(void) {
     // check if we're out of locks without the mutex first. then, grab the
     // mutex and check again. if we're still out of locks, run escalation.
     // return an error if we're still out of locks after escalation.
+    if (!out_of_locks())
+        return r;
+
+    fprintf(stderr, "%s:%u %d out of locks start\n", __FUNCTION__, __LINE__, toku_os_gettid());
+    uint64_t tstart = toku_current_time_microsec();
+    bool print_error = true;
+    int nloops = 0;
     while (out_of_locks()) {
+        nloops += 1;
         // Wait no more than 100 milliseconds for the mutex before checking
         // the out_of_locks() condition again.
         int mutex_r = m_mgr->mutex_timedlock(&timeout);
@@ -358,9 +366,16 @@ int locktree::manager::memory_tracker::check_current_lock_constraints(void) {
                 }
             }
             m_mgr->mutex_unlock();
-            return r;
+            break;
+        } else {
+            if (print_error) {
+                fprintf(stderr, "%s:%u %d error %d nloops=%d\n", __FUNCTION__, __LINE__, toku_os_gettid(), mutex_r, nloops);
+                print_error = 0;
+            }
         }
     }
+    uint64_t tend = toku_current_time_microsec();
+    fprintf(stderr, "%s:%u %d out of locks %" PRIu64 " %d\n", __FUNCTION__, __LINE__, toku_os_gettid(), tend - tstart, nloops);
     return r;
 }
 
