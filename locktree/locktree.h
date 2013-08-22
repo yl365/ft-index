@@ -229,6 +229,9 @@ public:
 
         int set_max_lock_memory(size_t max_lock_memory);
 
+        // Gets the current memory size used to store locks
+        size_t get_current_lock_memory();
+
         uint64_t get_lock_wait_time(void);
 
         void set_lock_wait_time(uint64_t lock_wait_time);
