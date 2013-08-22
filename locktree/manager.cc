@@ -155,6 +155,10 @@ int locktree::manager::set_max_lock_memory(size_t max_lock_memory) {
     return r;
 }
 
+size_t locktree::manager::get_current_lock_memory(void) {
+    return m_current_lock_memory;
+}
+
 uint64_t locktree::manager::get_lock_wait_time(void) {
     return m_lock_wait_time_ms;
 }
