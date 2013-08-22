@@ -88,83 +88,80 @@ PATENT RIGHTS GRANT:
 #ident "Copyright (c) 2007-2013 Tokutek Inc.  All rights reserved."
 #ident "The technology is licensed by the Massachusetts Institute of Technology, Rutgers State University of New Jersey, and the Research Foundation of State University of New York at Stony Brook under United States of America Serial No. 11/760379 and to the patents and/or patent applications resulting from it."
 
-#ifndef TOKU_LOCKTREE_UNIT_TEST_H
-#define TOKU_LOCKTREE_UNIT_TEST_H
-
-#include "test.h"
-
-#include "locktree.h"
-#include "concurrent_tree.h"
+#include "locktree_unit_test.h"
 
 namespace toku {
 
-class locktree_unit_test {
-public:
-    // test simple create and destroy of the locktree
-    void test_create_destroy(void);
+static uint64_t get_status(LTM_STATUS ltm_status, const char *keyname) {
+    TOKU_ENGINE_STATUS_ROW key_status = NULL;
+    // lookup keyname in status
+    for (int i = 0; ; i++) {
+        TOKU_ENGINE_STATUS_ROW status = &ltm_status->status[i];
+        if (status->keyname == NULL)
+            break;
+        if (strcmp(status->keyname, keyname) == 0) {
+            key_status = status;
+            break;
+        }
+    }
+    assert(key_status);
+    return key_status->value.num;
+}
 
-    // test that get/set userdata works, and that get_manager() works
-    void test_misc(void);
+// verify that a sequence of point write locks owned by a single transaction gets consolidated into a smaller number of ranges.
+void locktree_unit_test::test_escalation(void) {
+    int r;
 
-    // test that simple read and write locks can be acquired
-    void test_simple_lock(void);
+    // create a manager
+    locktree::manager mgr;
+    mgr.create(nullptr, nullptr, nullptr, nullptr);
 
-    // test that:
-    // - existing read locks can be upgrading to write locks
-    // - overlapping locks are consolidated in the tree
-    // - dominated locks succeed and are not stored in the tree
-    void test_overlapping_relock(void);
+    r = mgr.set_max_lock_memory(1000000);
+    assert(r == 0);
 
-    // test write lock conflicts when read or write locks exist
-    // test read lock conflicts when write locks exist
-    void test_conflicts(void);
-    
-    // test that ranges with infinite endpoints work
-    void test_infinity(void);
+    LTM_STATUS_S status;
+    mgr.get_status(&status);
+    assert(get_status(&status, "LTM_ESCALATION_COUNT") == 0);
 
-    // make sure the single txnid optimization does not screw
-    // up when there is more than one txnid with locks in the tree
-    void test_single_txnid_optimization(void);
+    // create a locktree
+    DESCRIPTOR desc = nullptr;
+    DICTIONARY_ID dict_id = { 1 };
+    locktree *lt = mgr.get_lt(dict_id, desc, compare_dbts, nullptr);
+    assert(lt);
 
-    // test lock escalation
-    void test_escalation(void);
-
-private:
-
-
-    template <typename F>
-    static void locktree_iterate(const locktree *lt, F *function) {
-        concurrent_tree::locked_keyrange ltr;
-        keyrange infinite_range = keyrange::get_infinite_range();
-
-        ltr.prepare(lt->m_rangetree);
-        ltr.acquire(infinite_range);
-        ltr.iterate<F>(function);
-        ltr.release();
+    // grab write locks on even numbers >= 0
+    size_t last_lock_memory = mgr.get_current_lock_memory();
+    DBT left, right;
+    const TXNID txnid_a = 1000;
+    const int64_t max_i = 100000;
+    for (int64_t i = 0; i < max_i; i++) {
+        r = locktree_write_lock(lt, txnid_a, 2*i, 2*i);
+        assert(r == 0);
+        size_t current_lock_memory = mgr.get_current_lock_memory();
+        if (current_lock_memory < last_lock_memory) {
+            printf("at %" PRId64 " %u -> %u\n", i, (unsigned) last_lock_memory, (unsigned) current_lock_memory);
+        }
+        last_lock_memory = current_lock_memory;
     }
 
-    static bool no_row_locks(const locktree *lt) {
-        return lt->m_rangetree->is_empty() && lt->m_sto_buffer.is_empty();
-    }
+    // ensure that escalation ran
+    mgr.get_status(&status);
+    assert(get_status(&status, "LTM_ESCALATION_COUNT") > 0);
 
-    static void locktree_test_release_lock(locktree *lt, TXNID txnid, const DBT *left_key, const DBT *right_key) {
-        range_buffer buffer;
-        buffer.create();
-        buffer.append(left_key, right_key);
-        lt->release_locks(txnid, &buffer);
-        buffer.destroy();
-    }
+    // release locks
+    int64_t left_k = 0; toku_fill_dbt(&left, &left_k, sizeof left_k);
+    int64_t right_k = 2*max_i; toku_fill_dbt(&right, &right_k, sizeof right_k);
+    locktree_test_release_lock(lt, txnid_a, &left, &right);
 
-    // grab a write range lock on int64 keys bounded by left_k and right_k
-    static int locktree_write_lock(locktree *lt, TXNID txnid, int64_t left_k, int64_t right_k) {
-        DBT left; toku_fill_dbt(&left, &left_k, sizeof left_k);
-        DBT right; toku_fill_dbt(&right, &right_k, sizeof right_k);
-        return lt->acquire_write_lock(txnid, &left, &right, nullptr);
-    }
-
-    friend class lock_request_unit_test;
-};
+    // cleanup
+    mgr.release_lt(lt);
+    mgr.destroy();
+}
 
 } /* namespace toku */
 
-#endif /* TOKU_LOCKTREE_UNIT_TEST_H */
+int main(void) {
+    toku::locktree_unit_test test;
+    test.test_escalation();
+    return 0;
+}
