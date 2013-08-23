@@ -355,20 +355,23 @@ void locktree::manager::memory_tracker::set_manager(manager *mgr) {
 int locktree::manager::memory_tracker::check_current_lock_constraints(void) {
     int r = 0;
 
-    struct timespec timeout;
-    timeout.tv_sec = 0;
-    timeout.tv_nsec = 100 * 1000 * 1000;
-
+#if 1
     // check if we're out of locks without the mutex first. then, grab the
     // mutex and check again. if we're still out of locks, run escalation.
     // return an error if we're still out of locks after escalation.
-    while (out_of_locks()) {
-        // Wait no more than 100 milliseconds for the mutex before checking
+    for (int i=0; out_of_locks(); i++) {
+        fprintf(stderr, "%u %s out of locks %d\n", toku_os_gettid(), __FUNCTION__, i);
+        // Wait no more than the timeout for the mutex before checking
         // the out_of_locks() condition again.
+        struct timespec timeout;
+        timeout.tv_sec = 0;
+        timeout.tv_nsec = 10 * 1000 * 1000; // 10 milliseconds
         int mutex_r = m_mgr->mutex_timedlock(&timeout);
         if (mutex_r == 0) {
             if (out_of_locks()) {
+                fprintf(stderr, "%d %s escalation start\n", toku_os_gettid(), __FUNCTION__);
                 m_mgr->run_escalation();
+                fprintf(stderr, "%d %s escalation end\n", toku_os_gettid(), __FUNCTION__);
                 if (out_of_locks()) {
                     r = TOKUDB_OUT_OF_LOCKS;
                 }
@@ -377,6 +380,23 @@ int locktree::manager::memory_tracker::check_current_lock_constraints(void) {
             return r;
         }
     }
+#else
+    // check if we're out of locks without the mutex first. then, grab the
+    // mutex and check again. if we're still out of locks, run escalation.
+    // return an error if we're still out of locks after escalation.
+    if (out_of_locks()) {
+        m_mgr->mutex_lock();
+        if (out_of_locks()) {
+            fprintf(stderr, "%d %s escalation start\n", toku_os_gettid(), __FUNCTION__);
+            m_mgr->run_escalation();
+            fprintf(stderr, "%d %s escalation end\n", toku_os_gettid(), __FUNCTION__);
+            if (out_of_locks()) {
+                r = TOKUDB_OUT_OF_LOCKS;
+            }
+        }
+        m_mgr->mutex_unlock();
+    }
+#endif
     return r;
 }
 
