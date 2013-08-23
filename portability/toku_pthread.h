@@ -214,7 +214,17 @@ toku_mutex_lock(toku_mutex_t *mutex) {
 
 static inline int
 toku_mutex_timedlock(toku_mutex_t *mutex, const struct timespec *timeout) {
-    int r = pthread_mutex_timedlock(&mutex->pmutex, timeout);
+    int r;
+    struct timespec t;
+    r = clock_gettime(CLOCK_REALTIME, &t);
+    assert(r == 0);
+    t.tv_nsec += timeout->tv_nsec;
+    t.tv_sec += timeout->tv_sec;
+    if (t.tv_nsec > 1000000000) {
+        t.tv_nsec -= 1000000000;
+        t.tv_sec += 1;
+    }
+    r = pthread_mutex_timedlock(&mutex->pmutex, &t);
     if (r == 0) {
 #if TOKU_PTHREAD_DEBUG
         invariant(mutex->valid);
