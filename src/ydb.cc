@@ -2244,6 +2244,35 @@ env_get_cursor_for_directory(DB_ENV* env, DB_TXN* txn, DBC** c) {
     return toku_db_cursor(env->i->directory, txn, c, 0);
 }
 
+static int
+env_iterate_pending_lock_requests(DB_ENV *env,
+                                  int (*callback)(
+                                    DB *db, uint64_t txnid,
+                                    DBT *left_key, DBT *right_key,
+                                    uint64_t blocking_txnid,
+                                    uint64_t start_time,
+                                    void *extra),
+                                  void *extra) {
+    if (!env_opened(env)) {
+        return EINVAL;
+    }
+
+    callback(NULL, 200, NULL, NULL, 100, 1377802753, extra);
+    return 0;
+}
+
+static int
+env_iterate_live_transactions(DB_ENV *env,
+                              int (*callback)(DB_TXN *txn, void *extra), 
+                              void *extra) {
+    if (!env_opened(env)) {
+        return EINVAL;
+    }
+
+    callback(NULL, extra);
+    return 0;
+}
+
 static int 
 toku_env_create(DB_ENV ** envp, uint32_t flags) {
     int r = ENOSYS;
@@ -2313,6 +2342,8 @@ toku_env_create(DB_ENV ** envp, uint32_t flags) {
     USENV(create_loader);
     USENV(get_cursor_for_persistent_environment);
     USENV(get_cursor_for_directory);
+    USENV(iterate_pending_lock_requests);
+    USENV(iterate_live_transactions);
     USENV(change_fsync_log_period);
 #undef USENV
     
