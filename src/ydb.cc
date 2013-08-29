@@ -2261,6 +2261,19 @@ env_iterate_pending_lock_requests(DB_ENV *env,
     return 0;
 }
 
+struct iter_txns_callback_extra {
+    iter_txns_callback_extra(int (*callback)(DB_TXN *txn, void *extra), void *extra) :
+        cb(callback), ex(extra) {
+    }
+    int (*cb)(DB_TXN *txn, void *extra);
+    void *ex;
+};
+
+static int iter_txns_callback(TOKUTXN txn, void *extra) {
+    iter_txns_callback_extra *info = reinterpret_cast<iter_txns_callback_extra *>(extra);
+    return info->cb(toku_txn_get_container_db_txn(txn), info->ex);
+}
+
 static int
 env_iterate_live_transactions(DB_ENV *env,
                               int (*callback)(DB_TXN *txn, void *extra), 
@@ -2269,8 +2282,9 @@ env_iterate_live_transactions(DB_ENV *env,
         return EINVAL;
     }
 
-    callback(NULL, extra);
-    return 0;
+    TXN_MANAGER txn_manager = toku_logger_get_txn_manager(env->i->logger);
+    iter_txns_callback_extra e(callback, extra);
+    return toku_txn_manager_iter_over_live_root_txns(txn_manager, iter_txns_callback, &e);
 }
 
 static int 
