@@ -114,11 +114,51 @@ static int UU() lock_escalation_op(DB_TXN *UU(txn), ARG arg, void* operation_ext
     return 0;
 }
 
+static void iterate_requests_callback(DB *db, uint64_t txnid,
+                                      const DBT *left_key, const DBT *right_key,
+                                      uint64_t blocking_txnid,
+                                      uint64_t UU(start_time),
+                                      void *extra) {
+    invariant_null(extra);
+    invariant(db != nullptr);
+    invariant(txnid > 0);
+    invariant(left_key != nullptr);
+    invariant(right_key != nullptr);
+    invariant(blocking_txnid > 0);
+    invariant(txnid != blocking_txnid);
+    if (rand() % 5 == 0) {
+        usleep(100);
+    }
+}
+
+static int UU() iterate_pending_lock_requests_op(DB_TXN *UU(txn), ARG arg, void *UU(operation_extra), void *UU(stats_extra)) {
+    DB_ENV *env = arg->env;
+    int r = env->iterate_pending_lock_requests(env, iterate_requests_callback, nullptr);
+    invariant_zero(r);
+    return r;
+}
+
+static void iterate_txns_callback(DB_TXN *txn, void *extra) {
+    invariant_null(extra);
+    invariant(txn != nullptr);
+    invariant(txn->id64(txn) > 0);
+    if (rand() % 5 == 0) {
+        usleep(100);
+    }
+}
+
+static int UU() iterate_live_transactions_op(DB_TXN *UU(txn), ARG arg, void *UU(operation_extra), void *UU(stats_extra)) {
+    DB_ENV *env = arg->env;
+    int r = env->iterate_live_transactions(env, iterate_txns_callback, nullptr);
+    invariant_zero(r);
+    return r;
+}
+
 static void
 stress_table(DB_ENV *env, DB **dbp, struct cli_args *cli_args) {
 
     if (verbose) printf("starting creation of pthreads\n");
-    const int non_update_threads = 2;
+    const int non_update_threads = 4;
     const int num_threads = non_update_threads + cli_args->num_update_threads;
     struct arg myargs[num_threads];
     for (int i = 0; i < num_threads; i++) {
@@ -136,6 +176,14 @@ stress_table(DB_ENV *env, DB **dbp, struct cli_args *cli_args) {
     myargs[1].sleep_ms = 15L * 1000;
     myargs[1].operation_extra = nullptr;
     myargs[1].operation = lock_escalation_op;
+
+    myargs[2].sleep_ms = 1L * 1000;
+    myargs[2].operation_extra = nullptr;
+    myargs[2].operation = iterate_pending_lock_requests_op;
+
+    myargs[3].sleep_ms = 1L * 1000;
+    myargs[3].operation_extra = nullptr;
+    myargs[3].operation = iterate_live_transactions_op;
 
     // make the threads that update the db
     struct update_op_args uoe = get_update_op_args(cli_args, NULL);

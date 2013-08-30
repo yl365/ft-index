@@ -469,7 +469,7 @@ void locktree::manager::iterate_pending_lock_requests(
         size_t num_requests = info->pending_lock_requests.size();
         for (size_t k = 0; k < num_requests; k++) {
             lock_request *req;
-            r = info->pending_lock_requests.fetch(i, &req);
+            r = info->pending_lock_requests.fetch(k, &req);
             invariant_zero(r);
             callback(lt->m_dict_id, req->get_txnid(),
                      req->get_left_key(), req->get_right_key(),
