@@ -90,14 +90,14 @@ PATENT RIGHTS GRANT:
 #ident "Copyright (c) 2007-2013 Tokutek Inc.  All rights reserved."
 #ident "$Id$"
 
-#include <map>
-
 #include <db.h>
 #include <limits.h>
 
 #include <ft/fttypes.h>
 #include <ft/ft-ops.h>
 #include <ft/minicron.h>
+// TODO: remove vanilla omt in favor of templated one
+#include <ft/omt.h>
 
 #include <util/growable_array.h>
 #include <util/omt.h>
@@ -131,21 +131,6 @@ typedef void (*toku_env_errcall_t)(const DB_ENV *, const char *, const char *);
 #error
 #endif
 
-struct compare_dict_ids {
-    bool operator() (const DICTIONARY_ID &a, const DICTIONARY_ID &b) const {
-        if (a.dictid < b.dictid) {
-            return -1;
-        } else if (a.dictid > b.dictid) {
-            return 1;
-        } else {
-            return 0;
-        }
-    }
-};
-
-typedef std::map<std::string, DB *> dname_db_map_t;
-typedef std::map<DICTIONARY_ID, DB *, compare_dict_ids> dict_id_db_map_t;
-
 struct __toku_db_env_internal {
     int is_panicked; // if nonzero, then its an error number
     char *panic_string;
@@ -170,8 +155,9 @@ struct __toku_db_env_internal {
 
     DB *directory;                                      // Maps dnames to inames
     DB *persistent_environment;                         // Stores environment settings, can be used for upgrade
-    dname_db_map_t open_dbs_by_dname;                   // Stores open db handles, sorted by dname
-    dict_id_db_map_t open_dbs_by_dict_id;               // Stores open db handles, sorted by dictionary id
+    // TODO: toku::omt<DB *>
+    OMT open_dbs_by_dname;                              // Stores open db handles, sorted first by dname and then by numerical value of pointer to the db (arbitrarily assigned memory location)
+    OMT open_dbs_by_dict_id;                            // Stores open db handles, sorted by dictionary id and then by numerical value of pointer to the db (arbitrarily assigned memory location)
     toku_mutex_t open_dbs_lock;                         // lock that protects the OMT of open dbs.
 
     char *real_data_dir;                                // data dir used when the env is opened (relative to cwd, or absolute with leading /)

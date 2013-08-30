@@ -1114,10 +1114,12 @@ env_close(DB_ENV * env, uint32_t flags) {
         r = toku_ydb_do_error(env, EINVAL, "%s", err_msg);
         goto panic_and_quit_early;
     }
-    if (!env->i->open_dbs_by_dname.empty()) {
-        err_msg = "Cannot close environment due to open DBs\n";
-        r = toku_ydb_do_error(env, EINVAL, "%s", err_msg);
-        goto panic_and_quit_early;
+    if (env->i->open_dbs_by_dname) { //Verify that there are no open dbs.
+        if (toku_omt_size(env->i->open_dbs_by_dname) > 0) {
+            err_msg = "Cannot close environment due to open DBs\n";
+            r = toku_ydb_do_error(env, EINVAL, "%s", err_msg);
+            goto panic_and_quit_early;
+        }
     }
     if (env->i->persistent_environment) {
         r = toku_db_close(env->i->persistent_environment);
@@ -1189,6 +1191,10 @@ env_close(DB_ENV * env, uint32_t flags) {
         toku_free(env->i->real_log_dir);
     if (env->i->real_tmp_dir)
         toku_free(env->i->real_tmp_dir);
+    if (env->i->open_dbs_by_dname)
+        toku_omt_destroy(&env->i->open_dbs_by_dname);
+    if (env->i->open_dbs_by_dict_id)
+        toku_omt_destroy(&env->i->open_dbs_by_dict_id);
     if (env->i->dir)
         toku_free(env->i->dir);
     toku_mutex_destroy(&env->i->open_dbs_lock);
@@ -2257,6 +2263,20 @@ struct ltm_iterate_requests_callback_extra {
     void *extra;
 };
 
+static int
+find_db_by_dict_id(OMTVALUE v, void *dict_id_v) {
+    DB *db = (DB *) v;
+    DICTIONARY_ID dict_id = db->i->dict_id;
+    DICTIONARY_ID dict_id_find = *(DICTIONARY_ID *) dict_id_v;
+    if (dict_id.dictid < dict_id_find.dictid) {
+        return -1;
+    } else if (dict_id.dictid > dict_id_find.dictid) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
 static void ltm_iterate_requests_callback(DICTIONARY_ID dict_id, TXNID txnid,
                                           const DBT *left_key,
                                           const DBT *right_key,
@@ -2267,9 +2287,11 @@ static void ltm_iterate_requests_callback(DICTIONARY_ID dict_id, TXNID txnid,
         reinterpret_cast<ltm_iterate_requests_callback_extra *>(extra);
 
     toku_mutex_lock(&info->env->i->open_dbs_lock);
-    dict_id_db_map_t::iterator it = info->env->i->open_dbs_by_dict_id.find(dict_id);
-    if (it != info->env->i->open_dbs_by_dict_id.end()) {
-        info->callback(it->second, txnid, left_key, right_key,
+    OMTVALUE dbv;
+    int r = toku_omt_find_zero(info->env->i->open_dbs_by_dict_id, find_db_by_dict_id,
+                               (void *) &dict_id, &dbv, nullptr);
+    if (r == 0) {
+        info->callback((DB *) dbv, txnid, left_key, right_key,
                        blocking_txnid, start_time, info->extra);
     }
     toku_mutex_unlock(&info->env->i->open_dbs_lock);
@@ -2424,8 +2446,11 @@ toku_env_create(DB_ENV ** envp, uint32_t flags) {
     // The escalate callback will need it to translate txnids to DB_TXNs
     result->i->ltm.create(toku_db_lt_on_create_callback, toku_db_lt_on_destroy_callback, toku_db_txn_escalate_callback, result);
 
-    toku_mutex_init(&result->i->open_dbs_lock, NULL);
+    r = toku_omt_create(&result->i->open_dbs_by_dname);
     assert_zero(r);
+    r = toku_omt_create(&result->i->open_dbs_by_dict_id);
+    assert_zero(r);
+    toku_mutex_init(&result->i->open_dbs_lock, NULL);
 
     *envp = result;
     r = 0;
@@ -2446,16 +2471,63 @@ DB_ENV_CREATE_FUN (DB_ENV ** envp, uint32_t flags) {
     return r;
 }
 
+// return 0 if v and dbv refer to same db (including same dname)
+// return <0 if v is earlier in omt than dbv
+// return >0 if v is later in omt than dbv
+static int
+find_db_by_db_dname(OMTVALUE v, void *dbv) {
+    DB *db = (DB *) v;            // DB* that is stored in the omt
+    DB *dbfind = (DB *) dbv;      // extra, to be compared to v
+    int cmp;
+    const char *dname     = db->i->dname;
+    const char *dnamefind = dbfind->i->dname;
+    cmp = strcmp(dname, dnamefind);
+    if (cmp != 0) return cmp;
+    if (db < dbfind) return -1;
+    if (db > dbfind) return  1;
+    return 0;
+}
+
+static int
+find_db_by_db_dict_id(OMTVALUE v, void *dbv) {
+    DB *db = (DB *) v;
+    DB *dbfind = (DB *) dbv;
+    DICTIONARY_ID dict_id = db->i->dict_id;
+    DICTIONARY_ID dict_id_find = dbfind->i->dict_id;
+    if (dict_id.dictid < dict_id_find.dictid) {
+        return -1;
+    } else if (dict_id.dictid > dict_id_find.dictid) {
+        return 1;
+    } else if (db < dbfind) {
+        return -1;
+    } else if (db > dbfind) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
 // Tell env that there is a new db handle (with non-unique dname in db->i-dname)
 void
 env_note_db_opened(DB_ENV *env, DB *db) {
     toku_mutex_lock(&env->i->open_dbs_lock);
     assert(db->i->dname); // internal (non-user) dictionary has no dname
-    assert(env->i->open_dbs_by_dname.find(db->i->dname) == env->i->open_dbs_by_dname.end());
-    assert(env->i->open_dbs_by_dict_id.find(db->i->dict_id) == env->i->open_dbs_by_dict_id.end());
-    env->i->open_dbs_by_dname[db->i->dname] = db;
-    env->i->open_dbs_by_dict_id[db->i->dict_id] = db;
-    STATUS_VALUE(YDB_LAYER_NUM_OPEN_DBS) = env->i->open_dbs_by_dname.size();
+
+    int r;
+    OMTVALUE v;
+    uint32_t idx;
+    r = toku_omt_find_zero(env->i->open_dbs_by_dname, find_db_by_db_dname,
+                           db, &v, &idx);
+    assert(r == DB_NOTFOUND);
+    r = toku_omt_insert_at(env->i->open_dbs_by_dname, db, idx);
+    assert_zero(r);
+    r = toku_omt_find_zero(env->i->open_dbs_by_dict_id, find_db_by_db_dict_id,
+                           db, &v, &idx);
+    assert(r == DB_NOTFOUND);
+    r = toku_omt_insert_at(env->i->open_dbs_by_dict_id, db, idx);
+    assert_zero(r);
+
+    STATUS_VALUE(YDB_LAYER_NUM_OPEN_DBS) = toku_omt_size(env->i->open_dbs_by_dname);
     STATUS_VALUE(YDB_LAYER_NUM_DB_OPEN)++;
     if (STATUS_VALUE(YDB_LAYER_NUM_OPEN_DBS) > STATUS_VALUE(YDB_LAYER_MAX_OPEN_DBS)) {
         STATUS_VALUE(YDB_LAYER_MAX_OPEN_DBS) = STATUS_VALUE(YDB_LAYER_NUM_OPEN_DBS);
@@ -2468,24 +2540,56 @@ void
 env_note_db_closed(DB_ENV *env, DB *db) {
     toku_mutex_lock(&env->i->open_dbs_lock);
     assert(db->i->dname); // internal (non-user) dictionary has no dname
-    assert(!env->i->open_dbs_by_dname.empty());
-    assert(!env->i->open_dbs_by_dict_id.empty());
-    assert(env->i->open_dbs_by_dname[db->i->dname] == db);
-    assert(env->i->open_dbs_by_dict_id[db->i->dict_id] == db);
-    env->i->open_dbs_by_dname.erase(db->i->dname);
-    env->i->open_dbs_by_dict_id.erase(db->i->dict_id);
+    assert(toku_omt_size(env->i->open_dbs_by_dname) > 0);
+    assert(toku_omt_size(env->i->open_dbs_by_dict_id) > 0);
+
+    int r;
+    OMTVALUE v;
+    uint32_t idx;
+    r = toku_omt_find_zero(env->i->open_dbs_by_dname, find_db_by_db_dname,
+                           db, &v, &idx);
+    assert_zero(r);
+    r = toku_omt_delete_at(env->i->open_dbs_by_dname, idx);
+    assert_zero(r);
+    r = toku_omt_find_zero(env->i->open_dbs_by_dict_id, find_db_by_db_dict_id,
+                           db, &v, &idx);
+    assert_zero(r);
+    r = toku_omt_delete_at(env->i->open_dbs_by_dict_id, idx);
+    assert_zero(r);
+
     STATUS_VALUE(YDB_LAYER_NUM_DB_CLOSE)++;
-    STATUS_VALUE(YDB_LAYER_NUM_OPEN_DBS) = env->i->open_dbs_by_dname.size();
+    STATUS_VALUE(YDB_LAYER_NUM_OPEN_DBS) = toku_omt_size(env->i->open_dbs_by_dname);
     toku_mutex_unlock(&env->i->open_dbs_lock);
+}
+
+static int
+find_open_db_by_dname (OMTVALUE v, void *dnamev) {
+    DB *db = (DB *) v;            // DB* that is stored in the omt
+    int cmp;
+    const char *dname     = db->i->dname;
+    const char *dnamefind = (char *) dnamev;
+    cmp = strcmp(dname, dnamefind);
+    return cmp;
 }
 
 // return true if there is any db open with the given dname
 static bool
 env_is_db_with_dname_open(DB_ENV *env, const char *dname) {
+    int r;
     bool rval;
+    OMTVALUE dbv;
+    uint32_t idx;
     toku_mutex_lock(&env->i->open_dbs_lock);
-    dname_db_map_t::iterator it = env->i->open_dbs_by_dname.find(dname);
-    rval = it != env->i->open_dbs_by_dname.end();
+    r = toku_omt_find_zero(env->i->open_dbs_by_dname, find_open_db_by_dname, (void*)dname, &dbv, &idx);
+    if (r==0) {
+        DB *db = (DB *) dbv;
+        assert(strcmp(dname, db->i->dname) == 0);
+        rval = true;
+    }
+    else {
+        assert(r==DB_NOTFOUND);
+        rval = false;
+    }
     toku_mutex_unlock(&env->i->open_dbs_lock);
     return rval;
 }
