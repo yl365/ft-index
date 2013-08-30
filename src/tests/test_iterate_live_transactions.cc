@@ -95,11 +95,10 @@ struct iterate_extra {
     int n;
 };
 
-static int iterate_callback(DB_TXN *txn, void *extra) {
+static void iterate_callback(DB_TXN *txn, void *extra) {
     (void) txn;
     iterate_extra *info = reinterpret_cast<iterate_extra *>(extra);
     info->n++;
-    return 0;
 }
 
 int test_main(int UU(argc), char *const UU(argv[])) {

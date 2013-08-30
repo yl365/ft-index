@@ -90,14 +90,13 @@ PATENT RIGHTS GRANT:
 
 #include "test.h"
 
-static int iterate_callback(DB *db, uint64_t requesting_txnid,
-                            DBT *left_key, DBT *right_key,
-                            uint64_t blocking_txnid, uint64_t start_time, void *extra) {
+static void iterate_callback(DB *db, uint64_t requesting_txnid,
+                             const DBT *left_key, const DBT *right_key,
+                             uint64_t blocking_txnid, uint64_t start_time, void *extra) {
     (void) db;
     (void) requesting_txnid; (void) blocking_txnid;
     (void) left_key; (void) right_key;
     (void) start_time; (void) extra;
-    return 0;
 }
 
 int test_main(int UU(argc), char *const UU(argv[])) {

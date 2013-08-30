@@ -93,6 +93,8 @@ PATENT RIGHTS GRANT:
 #include <portability/toku_pthread.h>
 
 #include "locktree.h"
+#include "lock_request.h"
+
 #include <util/status.h>
 
 namespace toku {
@@ -452,5 +454,30 @@ void locktree::manager::get_status(LTM_STATUS statp) {
 }
 #undef STATUS_VALUE
 
+void locktree::manager::iterate_pending_lock_requests(
+        lock_request_iterate_callback callback, void *extra) const {
+    int r = 0;
+    size_t num_locktrees = m_locktree_map.size();
+    for (size_t i = 0; i < num_locktrees; i++) {
+        locktree *lt;
+        r = m_locktree_map.fetch(i, &lt);
+        invariant_zero(r);
+
+        struct lt_lock_request_info *info = &lt->m_lock_request_info;
+        toku_mutex_lock(&info->mutex);
+
+        size_t num_requests = info->pending_lock_requests.size();
+        for (size_t k = 0; k < num_requests; k++) {
+            lock_request *req;
+            r = info->pending_lock_requests.fetch(i, &req);
+            invariant_zero(r);
+            callback(lt->m_dict_id, req->get_txnid(),
+                     req->get_left_key(), req->get_right_key(),
+                     req->get_conflicting_txnid(), req->get_start_time(), extra);
+        }
+
+        toku_mutex_unlock(&info->mutex);
+    }
+}
 
 } /* namespace toku */

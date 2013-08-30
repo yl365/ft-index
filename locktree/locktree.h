@@ -293,6 +293,17 @@ public:
 
         void get_status(LTM_STATUS status);
 
+        // effect: calls the iterate function on each pending lock request
+        // note: holds the manager's mutex
+        typedef void (*lock_request_iterate_callback)(DICTIONARY_ID dict_id,
+                                                      TXNID txnid,
+                                                      const DBT *left_key,
+                                                      const DBT *right_key,
+                                                      TXNID blocking_txnid,
+                                                      uint64_t start_time,
+                                                      void *extra);
+        void iterate_pending_lock_requests(lock_request_iterate_callback cb, void *extra) const;
+
     private:
         static const uint64_t DEFAULT_MAX_LOCK_MEMORY = 64L * 1024 * 1024;
         static const uint64_t DEFAULT_LOCK_WAIT_TIME = 0;
