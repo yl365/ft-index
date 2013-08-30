@@ -90,14 +90,31 @@ PATENT RIGHTS GRANT:
 
 #include "test.h"
 
+static DB_TXN *txn1, *txn2, *txn3;
+
 struct iterate_extra {
-    iterate_extra() : n(0) { }
+    iterate_extra() : n(0) {
+        visited_txn[0] = false;
+        visited_txn[1] = false;
+        visited_txn[2] = false;
+    }
     int n;
+    bool visited_txn[3];
 };
 
 static void iterate_callback(DB_TXN *txn, void *extra) {
-    (void) txn;
     iterate_extra *info = reinterpret_cast<iterate_extra *>(extra);
+    uint64_t txnid = txn->id64(txn);
+    if (txnid == txn1->id64(txn1)) {
+        assert(!info->visited_txn[0]);
+        info->visited_txn[0] = true;
+    } else if (txnid == txn2->id64(txn2)) {
+        assert(!info->visited_txn[1]);
+        info->visited_txn[1] = true;
+    } else if (txnid == txn3->id64(txn3)) {
+        assert(!info->visited_txn[2]);
+        info->visited_txn[2] = true;
+    }
     info->n++;
 }
 
@@ -115,7 +132,6 @@ int test_main(int UU(argc), char *const UU(argv[])) {
     assert(r == EINVAL);
     r = env->open(env, TOKU_TEST_FILENAME, env_flags, 0755); CKERR(r);
 
-    DB_TXN *txn1, *txn2, *txn3;
     r = env->txn_begin(env, NULL, &txn1, 0); CKERR(r);
     r = env->txn_begin(env, NULL, &txn2, 0); CKERR(r);
     r = env->txn_begin(env, NULL, &txn3, 0); CKERR(r);
@@ -123,6 +139,9 @@ int test_main(int UU(argc), char *const UU(argv[])) {
     {
         iterate_extra e;
         r = env->iterate_live_transactions(env, iterate_callback, &e); CKERR(r);
+        assert(e.visited_txn[0]);
+        assert(e.visited_txn[1]);
+        assert(e.visited_txn[2]);
         assert(e.n == 3);
     }
 
@@ -131,6 +150,9 @@ int test_main(int UU(argc), char *const UU(argv[])) {
     {
         iterate_extra e;
         r = env->iterate_live_transactions(env, iterate_callback, &e); CKERR(r);
+        assert(!e.visited_txn[0]);
+        assert(!e.visited_txn[1]);
+        assert(e.visited_txn[2]);
         assert(e.n == 1);
     }
 
@@ -138,6 +160,9 @@ int test_main(int UU(argc), char *const UU(argv[])) {
     {
         iterate_extra e;
         r = env->iterate_live_transactions(env, iterate_callback, &e); CKERR(r);
+        assert(!e.visited_txn[0]);
+        assert(!e.visited_txn[1]);
+        assert(!e.visited_txn[2]);
         assert(e.n == 0);
     }
 
