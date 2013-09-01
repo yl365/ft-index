@@ -456,7 +456,7 @@ static void print_db_env_struct (void) {
 			     "int (*get_cursor_for_persistent_environment) (DB_ENV*, /*in*/ DB_TXN *, /*out*/ DBC **)",
                  "void (*change_fsync_log_period)(DB_ENV*, uint32_t)",
                              "int (*iterate_pending_lock_requests)(DB_ENV *env, void (*callback)(DB *db, uint64_t requesting_txnid, const DBT *left_key, const DBT *right_key, uint64_t blocking_txnid, uint64_t start_time, void *extra), void *extra);",
-                             "int (*iterate_live_transactions)(DB_ENV *env, void (*callback)(DB_TXN *txn, void *extra), void *extra);",
+                             "int (*iterate_live_transactions)(DB_ENV *env, void (*callback)(uint64_t txnid, void *extra), void *extra);",
                              NULL};
 
 	sort_and_dump_fields("db_env", true, extra);

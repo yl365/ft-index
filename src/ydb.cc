@@ -2312,22 +2312,22 @@ env_iterate_pending_lock_requests(DB_ENV *env,
 }
 
 struct iter_txns_callback_extra {
-    iter_txns_callback_extra(void (*callback)(DB_TXN *txn, void *extra), void *extra) :
+    iter_txns_callback_extra(void (*callback)(TXNID txnid, void *extra), void *extra) :
         cb(callback), ex(extra) {
     }
-    void (*cb)(DB_TXN *txn, void *extra);
+    void (*cb)(uint64_t txn, void *extra);
     void *ex;
 };
 
 static int iter_txns_callback(TOKUTXN txn, void *extra) {
     iter_txns_callback_extra *info = reinterpret_cast<iter_txns_callback_extra *>(extra);
-    info->cb(toku_txn_get_container_db_txn(txn), info->ex);
+    info->cb(toku_txn_get_txnid(txn).parent_id64, info->ex);
     return 0;
 }
 
 static int
 env_iterate_live_transactions(DB_ENV *env,
-                              void (*callback)(DB_TXN *txn, void *extra), 
+                              void (*callback)(uint64_t txnid, void *extra), 
                               void *extra) {
     if (!env_opened(env)) {
         return EINVAL;

@@ -102,9 +102,8 @@ struct iterate_extra {
     bool visited_txn[3];
 };
 
-static void iterate_callback(DB_TXN *txn, void *extra) {
+static void iterate_callback(uint64_t txnid, void *extra) {
     iterate_extra *info = reinterpret_cast<iterate_extra *>(extra);
-    uint64_t txnid = txn->id64(txn);
     if (txnid == txn1->id64(txn1)) {
         assert(!info->visited_txn[0]);
         info->visited_txn[0] = true;

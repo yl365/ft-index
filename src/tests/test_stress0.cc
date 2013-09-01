@@ -138,10 +138,9 @@ static int UU() iterate_pending_lock_requests_op(DB_TXN *UU(txn), ARG arg, void 
     return r;
 }
 
-static void iterate_txns_callback(DB_TXN *txn, void *extra) {
+static void iterate_txns_callback(uint64_t txnid, void *extra) {
     invariant_null(extra);
-    invariant(txn != nullptr);
-    invariant(txn->id64(txn) > 0);
+    invariant(txnid > 0);
     if (rand() % 5 == 0) {
         usleep(100);
     }
