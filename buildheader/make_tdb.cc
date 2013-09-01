@@ -541,6 +541,7 @@ static void print_db_struct (void) {
 			 "int (*update_broadcast)(DB *, DB_TXN*, const DBT *extra, uint32_t flags)",
 			 "int (*get_fractal_tree_info64)(DB*,uint64_t*,uint64_t*,uint64_t*,uint64_t*)",
 			 "int (*iterate_fractal_tree_block_map)(DB*,int(*)(uint64_t,int64_t,int64_t,int64_t,int64_t,void*),void*)",
+                         "const char *(*get_dname)(DB *db)",
 			 NULL};
     sort_and_dump_fields("db", true, extra);
 }
