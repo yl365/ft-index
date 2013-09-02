@@ -186,6 +186,8 @@ public:
 
     int compare(const locktree *lt);
 
+    DICTIONARY_ID get_dict_id() const;
+
     struct lt_counters {
         uint64_t wait_count, wait_time;
         uint64_t long_wait_count, long_wait_time;

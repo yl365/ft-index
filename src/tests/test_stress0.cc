@@ -114,11 +114,11 @@ static int UU() lock_escalation_op(DB_TXN *UU(txn), ARG arg, void* operation_ext
     return 0;
 }
 
-static void iterate_requests_callback(DB *db, uint64_t txnid,
-                                      const DBT *left_key, const DBT *right_key,
-                                      uint64_t blocking_txnid,
-                                      uint64_t UU(start_time),
-                                      void *extra) {
+static void iterate_requests(DB *db, uint64_t txnid,
+                             const DBT *left_key, const DBT *right_key,
+                             uint64_t blocking_txnid,
+                             uint64_t UU(start_time),
+                             void *extra) {
     invariant_null(extra);
     invariant(db != nullptr);
     invariant(txnid > 0);
@@ -133,22 +133,34 @@ static void iterate_requests_callback(DB *db, uint64_t txnid,
 
 static int UU() iterate_pending_lock_requests_op(DB_TXN *UU(txn), ARG arg, void *UU(operation_extra), void *UU(stats_extra)) {
     DB_ENV *env = arg->env;
-    int r = env->iterate_pending_lock_requests(env, iterate_requests_callback, nullptr);
+    int r = env->iterate_pending_lock_requests(env, iterate_requests, nullptr);
     invariant_zero(r);
     return r;
 }
 
-static void iterate_txns_callback(uint64_t txnid, void *extra) {
+static void iterate_txns(uint64_t txnid, iterate_row_locks_callback iterate_locks,
+                         void *locks_extra, void *extra) {
     invariant_null(extra);
     invariant(txnid > 0);
-    if (rand() % 5 == 0) {
-        usleep(100);
+    DB *db;
+    DBT left_key, right_key;
+    while (iterate_locks(&db, &left_key, &right_key, locks_extra) == 0) {
+        invariant_notnull(db);
+        invariant_notnull(left_key.data);
+        invariant(left_key.size > 0);
+        invariant_notnull(right_key.data);
+        invariant(right_key.size > 0);
+        if (rand() % 5 == 0) {
+            usleep(50);
+        }
+        memset(&left_key, 0, sizeof(DBT));
+        memset(&right_key, 0, sizeof(DBT));
     }
 }
 
 static int UU() iterate_live_transactions_op(DB_TXN *UU(txn), ARG arg, void *UU(operation_extra), void *UU(stats_extra)) {
     DB_ENV *env = arg->env;
-    int r = env->iterate_live_transactions(env, iterate_txns_callback, nullptr);
+    int r = env->iterate_live_transactions(env, iterate_txns, nullptr);
     invariant_zero(r);
     return r;
 }

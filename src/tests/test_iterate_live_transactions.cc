@@ -102,8 +102,13 @@ struct iterate_extra {
     bool visited_txn[3];
 };
 
-static void iterate_callback(uint64_t txnid, void *extra) {
+static void iterate_callback(uint64_t txnid, iterate_row_locks_callback iterate_locks,
+                             void *locks_extra, void *extra) {
     iterate_extra *info = reinterpret_cast<iterate_extra *>(extra);
+    DB *db;
+    DBT left_key, right_key;
+    const bool has_row_locks = iterate_locks(&db, &left_key, &right_key, locks_extra);
+    invariant(!has_row_locks);
     if (txnid == txn1->id64(txn1)) {
         assert(!info->visited_txn[0]);
         info->visited_txn[0] = true;

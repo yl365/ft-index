@@ -455,8 +455,8 @@ static void print_db_env_struct (void) {
 			     "int (*get_cursor_for_directory)            (DB_ENV*, /*in*/ DB_TXN *, /*out*/ DBC **)",
 			     "int (*get_cursor_for_persistent_environment) (DB_ENV*, /*in*/ DB_TXN *, /*out*/ DBC **)",
                  "void (*change_fsync_log_period)(DB_ENV*, uint32_t)",
-                             "int (*iterate_pending_lock_requests)(DB_ENV *env, void (*callback)(DB *db, uint64_t requesting_txnid, const DBT *left_key, const DBT *right_key, uint64_t blocking_txnid, uint64_t start_time, void *extra), void *extra);",
-                             "int (*iterate_live_transactions)(DB_ENV *env, void (*callback)(uint64_t txnid, void *extra), void *extra);",
+                             "int (*iterate_live_transactions)(DB_ENV *env, iterate_transactions_callback callback, void *extra);",
+                             "int (*iterate_pending_lock_requests)(DB_ENV *env, iterate_requests_callback callback, void *extra);",
                              NULL};
 
 	sort_and_dump_fields("db_env", true, extra);
@@ -762,6 +762,9 @@ int main (int argc, char *const argv[] __attribute__((__unused__))) {
     printf("void toku_dbt_array_destroy_shallow(DBT_ARRAY *dbts) %s;\n", VISIBLE);
     printf("void toku_dbt_array_resize(DBT_ARRAY *dbts, uint32_t size) %s;\n", VISIBLE);
 
+    printf("typedef int (*iterate_row_locks_callback)(DB **db, DBT *left_key, DBT *right_key, void *extra);");
+    printf("typedef void (*iterate_transactions_callback)(uint64_t txnid, iterate_row_locks_callback cb, void *locks_extra, void *extra);");
+    printf("typedef void (*iterate_requests_callback)(DB *db, uint64_t requesting_txnid, const DBT *left_key, const DBT *right_key, uint64_t blocking_txnid, uint64_t start_time, void *extra);");
     print_db_env_struct();
     print_db_key_range_struct();
     print_db_lsn_struct();

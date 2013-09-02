@@ -2246,20 +2246,14 @@ env_get_cursor_for_directory(DB_ENV* env, DB_TXN* txn, DBC** c) {
     return toku_db_cursor(env->i->directory, txn, c, 0);
 }
 
-typedef void (*env_iterate_requests_callback)(DB *db, uint64_t txnid,
-                                              const DBT *left_key,
-                                              const DBT *right_key,
-                                              uint64_t blocking_txnid,
-                                              uint64_t start_time,
-                                              void *extra);
 struct ltm_iterate_requests_callback_extra {
     ltm_iterate_requests_callback_extra(DB_ENV *e,
-                                        env_iterate_requests_callback cb,
+                                        iterate_requests_callback cb,
                                         void *ex) :
         env(e), callback(cb), extra(ex) {
     }
     DB_ENV *env;
-    env_iterate_requests_callback callback;
+    iterate_requests_callback callback;
     void *extra;
 };
 
@@ -2277,6 +2271,14 @@ find_db_by_dict_id(OMTVALUE v, void *dict_id_v) {
     }
 }
 
+static DB *
+locked_get_db_by_dict_id(DB_ENV *env, DICTIONARY_ID dict_id) {
+    OMTVALUE dbv;
+    int r = toku_omt_find_zero(env->i->open_dbs_by_dict_id, find_db_by_dict_id,
+                               (void *) &dict_id, &dbv, nullptr);
+    return r == 0 ? (DB *) dbv : nullptr;
+}
+
 static void ltm_iterate_requests_callback(DICTIONARY_ID dict_id, TXNID txnid,
                                           const DBT *left_key,
                                           const DBT *right_key,
@@ -2287,11 +2289,9 @@ static void ltm_iterate_requests_callback(DICTIONARY_ID dict_id, TXNID txnid,
         reinterpret_cast<ltm_iterate_requests_callback_extra *>(extra);
 
     toku_mutex_lock(&info->env->i->open_dbs_lock);
-    OMTVALUE dbv;
-    int r = toku_omt_find_zero(info->env->i->open_dbs_by_dict_id, find_db_by_dict_id,
-                               (void *) &dict_id, &dbv, nullptr);
-    if (r == 0) {
-        info->callback((DB *) dbv, txnid, left_key, right_key,
+    DB *db = locked_get_db_by_dict_id(info->env, dict_id);
+    if (db != nullptr) {
+        info->callback(db, txnid, left_key, right_key,
                        blocking_txnid, start_time, info->extra);
     }
     toku_mutex_unlock(&info->env->i->open_dbs_lock);
@@ -2299,7 +2299,7 @@ static void ltm_iterate_requests_callback(DICTIONARY_ID dict_id, TXNID txnid,
 
 static int
 env_iterate_pending_lock_requests(DB_ENV *env,
-                                  env_iterate_requests_callback callback,
+                                  iterate_requests_callback callback,
                                   void *extra) {
     if (!env_opened(env)) {
         return EINVAL;
@@ -2311,30 +2311,84 @@ env_iterate_pending_lock_requests(DB_ENV *env,
     return 0;
 }
 
-struct iter_txns_callback_extra {
-    iter_txns_callback_extra(void (*callback)(TXNID txnid, void *extra), void *extra) :
-        cb(callback), ex(extra) {
+struct iter_txn_row_locks_callback_extra {
+    iter_txn_row_locks_callback_extra(DB *_db, const toku::range_buffer *b) :
+        db(_db) {
+        iter.create(b);
     }
-    void (*cb)(uint64_t txn, void *extra);
-    void *ex;
+
+    DB *db;
+    toku::range_buffer::iterator iter;
+    toku::range_buffer::iterator::record rec;
+};
+
+static int iter_txn_row_locks_callback(DB **db, DBT *left_key, DBT *right_key, void *extra) {
+    iter_txn_row_locks_callback_extra *info =
+        reinterpret_cast<iter_txn_row_locks_callback_extra *>(extra);
+
+    int r = 0;
+    const bool more = info->iter.current(&info->rec);
+    if (more) {
+        *db = info->db;
+        // TODO: Handle pos/neg infinity correctly
+        toku_copyref_dbt(left_key, *info->rec.get_left_key());
+        toku_copyref_dbt(right_key, *info->rec.get_right_key());
+        info->iter.next();
+    } else {
+        r = DB_NOTFOUND;
+    }
+    return r;
+}
+
+struct iter_txns_callback_extra {
+    iter_txns_callback_extra(DB_ENV *e, iterate_transactions_callback cb, void *ex) :
+        env(e), callback(cb), extra(ex) {
+    }
+    DB_ENV *env;
+    iterate_transactions_callback callback;
+    void *extra;
 };
 
 static int iter_txns_callback(TOKUTXN txn, void *extra) {
-    iter_txns_callback_extra *info = reinterpret_cast<iter_txns_callback_extra *>(extra);
-    info->cb(toku_txn_get_txnid(txn).parent_id64, info->ex);
+    iter_txns_callback_extra *info =
+        reinterpret_cast<iter_txns_callback_extra *>(extra);
+
+    DB_TXN *dbtxn = toku_txn_get_container_db_txn(txn);
+    invariant_notnull(dbtxn);
+
+    toku_mutex_lock(&db_txn_struct_i(dbtxn)->txn_mutex);
+
+    size_t num_ranges = db_txn_struct_i(dbtxn)->lt_map.size();
+    for (size_t i = 0; i < num_ranges; i++) {
+        txn_lt_key_ranges ranges;
+        int r = db_txn_struct_i(dbtxn)->lt_map.fetch(i, &ranges);
+        invariant_zero(r);
+        toku_mutex_lock(&info->env->i->open_dbs_lock);
+        DB *db = locked_get_db_by_dict_id(info->env, ranges.lt->get_dict_id());
+        if (db != nullptr) {
+            iter_txn_row_locks_callback_extra e(db, ranges.buffer);
+            info->callback(toku_txn_get_txnid(txn).parent_id64,
+                           iter_txn_row_locks_callback,
+                           &e,
+                           info->extra);
+        }
+        toku_mutex_unlock(&info->env->i->open_dbs_lock);
+    }
+
+    toku_mutex_unlock(&db_txn_struct_i(dbtxn)->txn_mutex);
     return 0;
 }
 
 static int
 env_iterate_live_transactions(DB_ENV *env,
-                              void (*callback)(uint64_t txnid, void *extra), 
+                              iterate_transactions_callback callback,
                               void *extra) {
     if (!env_opened(env)) {
         return EINVAL;
     }
 
     TXN_MANAGER txn_manager = toku_logger_get_txn_manager(env->i->logger);
-    iter_txns_callback_extra e(callback, extra);
+    iter_txns_callback_extra e(env, callback, extra);
     return toku_txn_manager_iter_over_live_root_txns(txn_manager, iter_txns_callback, &e);
 }
 
