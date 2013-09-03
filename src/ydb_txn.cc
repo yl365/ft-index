@@ -543,6 +543,8 @@ toku_txn_begin(DB_ENV *env, DB_TXN * stxn, DB_TXN ** txn, uint32_t flags) {
     db_txn_struct_i(result)->iso = child_isolation;
     db_txn_struct_i(result)->lt_map.create_no_array();
 
+    toku_mutex_init(&db_txn_struct_i(result)->txn_mutex, NULL);
+
     TXN_SNAPSHOT_TYPE snapshot_type;
     switch(db_txn_struct_i(result)->iso){
         case(TOKU_ISO_SNAPSHOT):
@@ -581,8 +583,6 @@ toku_txn_begin(DB_ENV *env, DB_TXN * stxn, DB_TXN ** txn, uint32_t flags) {
         assert(!db_txn_struct_i(result->parent)->child);
         db_txn_struct_i(result->parent)->child = result;
     }
-
-    toku_mutex_init(&db_txn_struct_i(result)->txn_mutex, NULL);
 
     *txn = result;
     return 0;
