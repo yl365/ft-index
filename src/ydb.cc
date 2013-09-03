@@ -2351,7 +2351,9 @@ static int iter_txn_row_locks_callback(DB **db, DBT *left_key, DBT *right_key, v
     const bool more = info->iter.current(&info->rec);
     if (more) {
         *db = info->current_db;
-        // TODO: Handle pos/neg infinity correctly
+        // The caller should interpret data/size == 0 to mean infinity.
+        // Therefore, when we copyref pos/neg infinity into left/right_key,
+        // the caller knows what we're talking about.
         toku_copyref_dbt(left_key, *info->rec.get_left_key());
         toku_copyref_dbt(right_key, *info->rec.get_right_key());
         info->iter.next();
