@@ -114,11 +114,11 @@ static int UU() lock_escalation_op(DB_TXN *UU(txn), ARG arg, void* operation_ext
     return 0;
 }
 
-static void iterate_requests(DB *db, uint64_t txnid,
-                             const DBT *left_key, const DBT *right_key,
-                             uint64_t blocking_txnid,
-                             uint64_t UU(start_time),
-                             void *extra) {
+static int iterate_requests(DB *db, uint64_t txnid,
+                            const DBT *left_key, const DBT *right_key,
+                            uint64_t blocking_txnid,
+                            uint64_t UU(start_time),
+                            void *extra) {
     invariant_null(extra);
     invariant(db != nullptr);
     invariant(txnid > 0);
@@ -129,6 +129,7 @@ static void iterate_requests(DB *db, uint64_t txnid,
     if (rand() % 5 == 0) {
         usleep(100);
     }
+    return 0;
 }
 
 static int UU() iterate_pending_lock_requests_op(DB_TXN *UU(txn), ARG arg, void *UU(operation_extra), void *UU(stats_extra)) {
@@ -138,8 +139,8 @@ static int UU() iterate_pending_lock_requests_op(DB_TXN *UU(txn), ARG arg, void 
     return r;
 }
 
-static void iterate_txns(uint64_t txnid, iterate_row_locks_callback iterate_locks,
-                         void *locks_extra, void *extra) {
+static int iterate_txns(uint64_t txnid, iterate_row_locks_callback iterate_locks,
+                        void *locks_extra, void *extra) {
     invariant_null(extra);
     invariant(txnid > 0);
     DB *db;
@@ -156,6 +157,7 @@ static void iterate_txns(uint64_t txnid, iterate_row_locks_callback iterate_lock
         memset(&left_key, 0, sizeof(DBT));
         memset(&right_key, 0, sizeof(DBT));
     }
+    return 0;
 }
 
 static int UU() iterate_live_transactions_op(DB_TXN *UU(txn), ARG arg, void *UU(operation_extra), void *UU(stats_extra)) {

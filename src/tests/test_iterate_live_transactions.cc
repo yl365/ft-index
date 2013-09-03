@@ -102,8 +102,8 @@ struct iterate_extra {
     bool visited_txn[3];
 };
 
-static void iterate_callback(uint64_t txnid, iterate_row_locks_callback iterate_locks,
-                             void *locks_extra, void *extra) {
+static int iterate_callback(uint64_t txnid, iterate_row_locks_callback iterate_locks,
+                            void *locks_extra, void *extra) {
     iterate_extra *info = reinterpret_cast<iterate_extra *>(extra);
     DB *db;
     DBT left_key, right_key;
@@ -120,6 +120,7 @@ static void iterate_callback(uint64_t txnid, iterate_row_locks_callback iterate_
         info->visited_txn[2] = true;
     }
     info->n++;
+    return 0;
 }
 
 int test_main(int UU(argc), char *const UU(argv[])) {
