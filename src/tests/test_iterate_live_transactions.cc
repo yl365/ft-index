@@ -102,7 +102,8 @@ struct iterate_extra {
     bool visited_txn[3];
 };
 
-static int iterate_callback(uint64_t txnid, iterate_row_locks_callback iterate_locks,
+static int iterate_callback(uint64_t txnid, uint64_t client_id,
+                            iterate_row_locks_callback iterate_locks,
                             void *locks_extra, void *extra) {
     iterate_extra *info = reinterpret_cast<iterate_extra *>(extra);
     DB *db;
@@ -111,12 +112,15 @@ static int iterate_callback(uint64_t txnid, iterate_row_locks_callback iterate_l
     invariant(!has_row_locks);
     if (txnid == txn1->id64(txn1)) {
         assert(!info->visited_txn[0]);
+        invariant(client_id == 0);
         info->visited_txn[0] = true;
     } else if (txnid == txn2->id64(txn2)) {
         assert(!info->visited_txn[1]);
+        invariant(client_id == 1);
         info->visited_txn[1] = true;
     } else if (txnid == txn3->id64(txn3)) {
         assert(!info->visited_txn[2]);
+        invariant(client_id == 2);
         info->visited_txn[2] = true;
     }
     info->n++;
@@ -138,8 +142,11 @@ int test_main(int UU(argc), char *const UU(argv[])) {
     r = env->open(env, TOKU_TEST_FILENAME, env_flags, 0755); CKERR(r);
 
     r = env->txn_begin(env, NULL, &txn1, 0); CKERR(r);
+    txn1->set_client_id(txn1, 0);
     r = env->txn_begin(env, NULL, &txn2, 0); CKERR(r);
+    txn2->set_client_id(txn2, 1);
     r = env->txn_begin(env, NULL, &txn3, 0); CKERR(r);
+    txn3->set_client_id(txn3, 2);
 
     {
         iterate_extra e;

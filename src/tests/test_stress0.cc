@@ -139,10 +139,12 @@ static int UU() iterate_pending_lock_requests_op(DB_TXN *UU(txn), ARG arg, void 
     return r;
 }
 
-static int iterate_txns(uint64_t txnid, iterate_row_locks_callback iterate_locks,
+static int iterate_txns(uint64_t txnid, uint64_t client_id,
+                        iterate_row_locks_callback iterate_locks,
                         void *locks_extra, void *extra) {
     invariant_null(extra);
     invariant(txnid > 0);
+    invariant(client_id == 0);
     DB *db;
     DBT left_key, right_key;
     while (iterate_locks(&db, &left_key, &right_key, locks_extra) == 0) {
