@@ -304,7 +304,7 @@ public:
                                                      TXNID blocking_txnid,
                                                      uint64_t start_time,
                                                      void *extra);
-        int iterate_pending_lock_requests(lock_request_iterate_callback cb, void *extra) const;
+        int iterate_pending_lock_requests(lock_request_iterate_callback cb, void *extra);
 
     private:
         static const uint64_t DEFAULT_MAX_LOCK_MEMORY = 64L * 1024 * 1024;

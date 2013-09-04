@@ -455,7 +455,8 @@ void locktree::manager::get_status(LTM_STATUS statp) {
 #undef STATUS_VALUE
 
 int locktree::manager::iterate_pending_lock_requests(
-        lock_request_iterate_callback callback, void *extra) const {
+        lock_request_iterate_callback callback, void *extra) {
+    mutex_lock();
     int r = 0;
     size_t num_locktrees = m_locktree_map.size();
     for (size_t i = 0; i < num_locktrees && r == 0; i++) {
@@ -478,6 +479,7 @@ int locktree::manager::iterate_pending_lock_requests(
 
         toku_mutex_unlock(&info->mutex);
     }
+    mutex_unlock();
     return r;
 }
 
