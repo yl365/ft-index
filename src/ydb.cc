@@ -2342,30 +2342,25 @@ static int iter_txn_row_locks_callback(DB **db, DBT *left_key, DBT *right_key, v
     iter_txn_row_locks_callback_extra *info =
         reinterpret_cast<iter_txn_row_locks_callback_extra *>(extra);
 
-    // For when a transaction has no row locks at all.
-    if (info->lt_map->size() == 0) {
-        return DB_NOTFOUND;
-    }
-
-    int r = 0;
-    const bool more = info->iter.current(&info->rec);
-    if (more) {
-        *db = info->current_db;
-        // The caller should interpret data/size == 0 to mean infinity.
-        // Therefore, when we copyref pos/neg infinity into left/right_key,
-        // the caller knows what we're talking about.
-        toku_copyref_dbt(left_key, *info->rec.get_left_key());
-        toku_copyref_dbt(right_key, *info->rec.get_right_key());
-        info->iter.next();
-    } else {
-        info->which_lt++;
-        if (info->which_lt < info->lt_map->size()) {
-            info->set_iterator_and_current_db();
+    while (info->which_lt < info->lt_map->size()) {
+        const bool more = info->iter.current(&info->rec);
+        if (more) {
+            *db = info->current_db;
+            // The caller should interpret data/size == 0 to mean infinity.
+            // Therefore, when we copyref pos/neg infinity into left/right_key,
+            // the caller knows what we're talking about.
+            toku_copyref_dbt(left_key, *info->rec.get_left_key());
+            toku_copyref_dbt(right_key, *info->rec.get_right_key());
+            info->iter.next();
+            return 0;
         } else {
-            r = DB_NOTFOUND;
+            info->which_lt++;
+            if (info->which_lt < info->lt_map->size()) {
+                info->set_iterator_and_current_db();
+            }
         }
     }
-    return r;
+    return DB_NOTFOUND;
 }
 
 struct iter_txns_callback_extra {
