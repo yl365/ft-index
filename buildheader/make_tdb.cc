@@ -568,7 +568,9 @@ static void print_db_txn_struct (void) {
 	"int (*commit_with_progress)(DB_TXN*, uint32_t, TXN_PROGRESS_POLL_FUNCTION, void*)",
 	"int (*abort_with_progress)(DB_TXN*, TXN_PROGRESS_POLL_FUNCTION, void*)",
 	"int (*xa_prepare) (DB_TXN*, TOKU_XA_XID *)",
-    "uint64_t (*id64) (DB_TXN*)",
+        "uint64_t (*id64) (DB_TXN*)",
+        "void (*set_client_id)(DB_TXN *, uint64_t client_id)",
+        "uint64_t (*get_client_id)(DB_TXN *)",
 	NULL};
     sort_and_dump_fields("db_txn", false, extra);
 }
@@ -762,9 +764,9 @@ int main (int argc, char *const argv[] __attribute__((__unused__))) {
     printf("void toku_dbt_array_destroy_shallow(DBT_ARRAY *dbts) %s;\n", VISIBLE);
     printf("void toku_dbt_array_resize(DBT_ARRAY *dbts, uint32_t size) %s;\n", VISIBLE);
 
-    printf("typedef int (*iterate_row_locks_callback)(DB **db, DBT *left_key, DBT *right_key, void *extra);");
-    printf("typedef int (*iterate_transactions_callback)(uint64_t txnid, iterate_row_locks_callback cb, void *locks_extra, void *extra);");
-    printf("typedef int (*iterate_requests_callback)(DB *db, uint64_t requesting_txnid, const DBT *left_key, const DBT *right_key, uint64_t blocking_txnid, uint64_t start_time, void *extra);");
+    printf("typedef int (*iterate_row_locks_callback)(DB **db, DBT *left_key, DBT *right_key, void *extra);\n");
+    printf("typedef int (*iterate_transactions_callback)(uint64_t txnid, uint64_t client_id, iterate_row_locks_callback cb, void *locks_extra, void *extra);\n");
+    printf("typedef int (*iterate_requests_callback)(DB *db, uint64_t requesting_txnid, const DBT *left_key, const DBT *right_key, uint64_t blocking_txnid, uint64_t start_time, void *extra);\n");
     print_db_env_struct();
     print_db_key_range_struct();
     print_db_lsn_struct();
