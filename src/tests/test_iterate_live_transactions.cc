@@ -108,8 +108,8 @@ static int iterate_callback(uint64_t txnid, uint64_t client_id,
     iterate_extra *info = reinterpret_cast<iterate_extra *>(extra);
     DB *db;
     DBT left_key, right_key;
-    const bool has_row_locks = iterate_locks(&db, &left_key, &right_key, locks_extra);
-    invariant(!has_row_locks);
+    int r = iterate_locks(&db, &left_key, &right_key, locks_extra);
+    invariant(r == DB_NOTFOUND);
     if (txnid == txn1->id64(txn1)) {
         assert(!info->visited_txn[0]);
         invariant(client_id == 0);
