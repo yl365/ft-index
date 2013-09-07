@@ -88,85 +88,74 @@ PATENT RIGHTS GRANT:
 #ident "Copyright (c) 2007-2013 Tokutek Inc.  All rights reserved."
 #ident "The technology is licensed by the Massachusetts Institute of Technology, Rutgers State University of New Jersey, and the Research Foundation of State University of New York at Stony Brook under United States of America Serial No. 11/760379 and to the patents and/or patent applications resulting from it."
 
-#include "lock_request_unit_test.h"
+#include "test.h"
 
-namespace toku {
+#include <portability/toku_pthread.h>
 
-// make sure deadlocks are detected when a lock request starts
-void lock_request_unit_test::test_start_deadlock(void) {
-    int r;
-    locktree::manager mgr;
-    locktree *lt;
-    // something short
-    const uint64_t lock_wait_time = 10;
+static DB_ENV *env;
+static DB *db;
+static DB_TXN *txn1, *txn2;
+static const int magic_key = 100;
+static bool callback_called;
+toku_pthread_t thread1;
 
-    mgr.create(nullptr, nullptr, nullptr, nullptr);
-    DICTIONARY_ID dict_id = { 1 };
-    lt = mgr.get_lt(dict_id, nullptr, compare_dbts, nullptr);
-
-    TXNID txnid_a = 1001;
-    TXNID txnid_b = 2001;
-    TXNID txnid_c = 3001;
-    lock_request request_a;
-    lock_request request_b;
-    lock_request request_c;
-    request_a.create(lock_wait_time);
-    request_b.create(lock_wait_time);
-    request_c.create(lock_wait_time);
-
-    const DBT *one = get_dbt(1);
-    const DBT *two = get_dbt(2);
-
-    // start and succeed 1,1 for A and 2,2 for B.
-    request_a.set(lt, txnid_a, one, one, lock_request::type::WRITE);
-    r = request_a.start();
-    invariant_zero(r);
-    request_b.set(lt, txnid_b, two, two, lock_request::type::WRITE);
-    r = request_b.start();
-    invariant_zero(r);
-
-    // txnid A should not be granted a lock on 2,2, so it goes pending.
-    request_a.set(lt, txnid_a, two, two, lock_request::type::WRITE);
-    r = request_a.start();
-    invariant(r == DB_LOCK_NOTGRANTED);
-
-    // if txnid B wants a lock on 1,1 it should deadlock with A
-    request_b.set(lt, txnid_b, one, one, lock_request::type::WRITE);
-    r = request_b.start();
-    invariant(r == DB_LOCK_DEADLOCK);
-
-    // txnid C should not deadlock on either of these - it should just time out.
-    request_c.set(lt, txnid_c, one, one, lock_request::type::WRITE);
-    r = request_c.start();
-    invariant(r == DB_LOCK_NOTGRANTED);
-    r = request_c.wait(nullptr, nullptr);
-    invariant(r == DB_LOCK_NOTGRANTED);
-    request_c.set(lt, txnid_c, two, two, lock_request::type::WRITE);
-    r = request_c.start();
-    invariant(r == DB_LOCK_NOTGRANTED);
-    r = request_c.wait(nullptr, nullptr);
-    invariant(r == DB_LOCK_NOTGRANTED);
-
-    // release locks for A and B, then wait on A's request which should succeed
-    // since B just unlocked and should have completed A's pending request.
-    release_lock_and_retry_requests(lt, txnid_a, one, one);
-    release_lock_and_retry_requests(lt, txnid_b, two, two);
-    r = request_a.wait(nullptr, nullptr);
-    invariant_zero(r);
-    release_lock_and_retry_requests(lt, txnid_a, two, two);
-
-    request_a.destroy();
-    request_b.destroy();
-    request_c.destroy();
-    mgr.release_lt(lt);
-    mgr.destroy();
+static void lock_not_granted(DB *_db, uint64_t requesting_txnid,
+                             const DBT *left_key, const DBT *right_key,
+                             uint64_t blocking_txnid) {
+    callback_called = true;
+    invariant(strcmp(_db->get_dname(_db), db->get_dname(db)) == 0);
+    invariant(requesting_txnid == txn2->id64(txn2));
+    invariant(blocking_txnid == txn1->id64(txn1));
+    invariant(*reinterpret_cast<int *>(left_key->data) == magic_key);
+    invariant(*reinterpret_cast<int *>(right_key->data) == magic_key);
 }
 
-} /* namespace toku */
+static void acquire_lock(DB_TXN *txn, int key) {
+    int val = 0;
+    DBT k, v;
+    dbt_init(&k, &key, sizeof(int));
+    dbt_init(&v, &val, sizeof(int));
+    (void) db->put(db, txn, &k, &v, 0);
+}
 
-int main(void) {
-    toku::lock_request_unit_test test;
-    test.test_start_deadlock();
+int test_main(int UU(argc), char *const UU(argv[])) {
+    int r;
+    const int env_flags = DB_INIT_MPOOL | DB_CREATE | DB_THREAD |
+        DB_INIT_LOCK | DB_INIT_LOG | DB_INIT_TXN | DB_PRIVATE;
+
+    toku_os_recursive_delete(TOKU_TEST_FILENAME);
+    r = toku_os_mkdir(TOKU_TEST_FILENAME, 0755); CKERR(r);
+
+    r = db_env_create(&env, 0); CKERR(r);
+    r = env->open(env, TOKU_TEST_FILENAME, env_flags, 0755); CKERR(r);
+    r = env->set_lock_timeout(env, 100); // 100ms wait, doesn't need to be high
+    r = env->set_lock_timeout_callback(env, lock_not_granted);
+
+    r = db_create(&db, env, 0); CKERR(r);
+    r = db->open(db, NULL, "test", NULL, DB_BTREE, DB_CREATE, 0777); CKERR(r);
+
+    r = env->txn_begin(env, NULL, &txn1, DB_SERIALIZABLE); CKERR(r);
+    r = env->txn_begin(env, NULL, &txn2, DB_SERIALIZABLE); CKERR(r);
+
+    // Extremely simple test. Get lock [0, 0] on txn1, then asynchronously
+    // attempt to get that lock in txn2. The timouet callback should get called.
+
+    acquire_lock(txn1, magic_key);
+    invariant(!callback_called);
+
+    acquire_lock(txn2, magic_key);
+    invariant(callback_called);
+
+    // If we set the callback to null, then it shouldn't get called anymore.
+    callback_called = false;
+    env->set_lock_timeout_callback(env, nullptr);
+    acquire_lock(txn2, magic_key);
+    invariant(!callback_called);
+
+    r = txn1->commit(txn1, 0); CKERR(r);
+    r = txn2->commit(txn2, 0); CKERR(r);
+
+    r = db->close(db, 0); CKERR(r);
+    r = env->close(env, 0); CKERR(r);
     return 0;
 }
-

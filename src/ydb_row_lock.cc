@@ -260,7 +260,8 @@ int toku_db_start_range_lock(DB *db, DB_TXN *txn, const DBT *left_key, const DBT
 // Complete a lock request by waiting until the request is ready
 // and then storing the acquired lock if successful.
 int toku_db_wait_range_lock(DB *db, DB_TXN *txn, toku::lock_request *request) {
-    int r = request->wait();
+    const int r = request->wait(txn->mgrp->i->lock_wait_timeout_callback,
+                                &txn->mgrp->i->timeout_callback_extra);
     if (r == 0) {
         DB_TXN *txn_anc = txn_oldest_ancester(txn);
         const DBT *left_key = request->get_left_key();
