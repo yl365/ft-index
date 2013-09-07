@@ -139,19 +139,19 @@ void lock_request_unit_test::test_start_deadlock(void) {
     request_c.set(lt, txnid_c, one, one, lock_request::type::WRITE);
     r = request_c.start();
     invariant(r == DB_LOCK_NOTGRANTED);
-    r = request_c.wait(nullptr, nullptr);
+    r = request_c.wait();
     invariant(r == DB_LOCK_NOTGRANTED);
     request_c.set(lt, txnid_c, two, two, lock_request::type::WRITE);
     r = request_c.start();
     invariant(r == DB_LOCK_NOTGRANTED);
-    r = request_c.wait(nullptr, nullptr);
+    r = request_c.wait();
     invariant(r == DB_LOCK_NOTGRANTED);
 
     // release locks for A and B, then wait on A's request which should succeed
     // since B just unlocked and should have completed A's pending request.
     release_lock_and_retry_requests(lt, txnid_a, one, one);
     release_lock_and_retry_requests(lt, txnid_b, two, two);
-    r = request_a.wait(nullptr, nullptr);
+    r = request_a.wait();
     invariant_zero(r);
     release_lock_and_retry_requests(lt, txnid_a, two, two);
 

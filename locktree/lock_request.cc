@@ -248,8 +248,7 @@ void lock_request::calculate_cond_wakeup_time(struct timespec *ts) {
 }
 
 // sleep on the lock request until it becomes resolved or the wait time has elapsed.
-int lock_request::wait(lt_timeout_callback callback, void *extra) {
-    bool timed_out = false;
+int lock_request::wait(void) {
     uint64_t t_start = toku_current_time_microsec();
     toku_mutex_lock(&m_info->mutex);
     while (m_state == state::PENDING) {
@@ -264,7 +263,6 @@ int lock_request::wait(lt_timeout_callback callback, void *extra) {
             remove_from_lock_requests();
             // complete sets m_state to COMPLETE, breaking us out of the loop
             complete(DB_LOCK_NOTGRANTED);
-            timed_out = true;
         }
     }
     uint64_t t_end = toku_current_time_microsec();
@@ -276,13 +274,6 @@ int lock_request::wait(lt_timeout_callback callback, void *extra) {
         m_info->counters.long_wait_time += duration;
     }
     toku_mutex_unlock(&m_info->mutex);
-
-    // Let the caller know this request timed out, if necessary
-    if (timed_out && callback != NULL) {
-        callback(m_lt->get_dict_id(), m_txnid,
-                 m_left_key, m_right_key,
-                 m_conflicting_txnid, extra);
-    }
 
     invariant(m_state == state::COMPLETE);
     return m_complete_r;

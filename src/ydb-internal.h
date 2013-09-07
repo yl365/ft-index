@@ -132,14 +132,6 @@ typedef void (*toku_env_errcall_t)(const DB_ENV *, const char *, const char *);
 #error
 #endif
 
-struct env_lt_timeout_callback_extra {
-    env_lt_timeout_callback_extra(DB_ENV *e, lock_timeout_callback cb) :
-        env(e), callback(cb) {
-    }
-    DB_ENV *env;
-    lock_timeout_callback callback;
-};
-
 struct __toku_db_env_internal {
     int is_panicked; // if nonzero, then its an error number
     char *panic_string;
@@ -161,8 +153,7 @@ struct __toku_db_env_internal {
     CACHETABLE cachetable;
     TOKULOGGER logger;
     toku::locktree::manager ltm;
-    env_lt_timeout_callback_extra timeout_callback_extra;
-    toku::lock_request::lt_timeout_callback lock_wait_timeout_callback;   // Called when a lock request times out waiting for a lock.
+    lock_timeout_callback lock_wait_timeout_callback;   // Called when a lock request times out waiting for a lock.
 
     DB *directory;                                      // Maps dnames to inames
     DB *persistent_environment;                         // Stores environment settings, can be used for upgrade

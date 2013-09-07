@@ -1720,58 +1720,10 @@ env_set_lock_timeout(DB_ENV *env, uint64_t lock_timeout_msec) {
 }
 
 static int
-find_db_by_dict_id(OMTVALUE v, void *dict_id_v) {
-    DB *db = (DB *) v;
-    DICTIONARY_ID dict_id = db->i->dict_id;
-    DICTIONARY_ID dict_id_find = *(DICTIONARY_ID *) dict_id_v;
-    if (dict_id.dictid < dict_id_find.dictid) {
-        return -1;
-    } else if (dict_id.dictid > dict_id_find.dictid) {
-        return 1;
-    } else {
-        return 0;
-    }
-}
-
-static DB *
-locked_get_db_by_dict_id(DB_ENV *env, DICTIONARY_ID dict_id) {
-    OMTVALUE dbv;
-    int r = toku_omt_find_zero(env->i->open_dbs_by_dict_id, find_db_by_dict_id,
-                               (void *) &dict_id, &dbv, nullptr);
-    return r == 0 ? (DB *) dbv : nullptr;
-}
-
-static void
-env_lt_timeout_callback(DICTIONARY_ID dict_id,
-                        TXNID txnid,
-                        const DBT *left_key,
-                        const DBT *right_key,
-                        TXNID blocking_txnid,
-                        void *extra) {
-    env_lt_timeout_callback_extra *info =
-        reinterpret_cast<env_lt_timeout_callback_extra *>(extra);
-
-    toku_pthread_rwlock_rdlock(&info->env->i->open_dbs_rwlock);
-    DB *db = locked_get_db_by_dict_id(info->env, dict_id);
-    if (db != nullptr) {
-        info->callback(db, txnid, left_key, right_key, blocking_txnid);
-    }
-    toku_pthread_rwlock_rdunlock(&info->env->i->open_dbs_rwlock);
-}
-
-static int
 env_set_lock_timeout_callback(DB_ENV *env, lock_timeout_callback callback) {
     // We wrap the user's callback in an environment timeout callback that
     // knows how to translaet dictionary id into DB *.
-    if (callback != nullptr) {
-        env->i->lock_wait_timeout_callback = env_lt_timeout_callback;
-        env->i->timeout_callback_extra.env = env;
-        env->i->timeout_callback_extra.callback = callback;
-    } else {
-        env->i->lock_wait_timeout_callback = nullptr;
-        env->i->timeout_callback_extra.env = nullptr;
-        env->i->timeout_callback_extra.callback = nullptr;
-    }
+    env->i->lock_wait_timeout_callback = callback;
     return 0;
 }
 
@@ -2312,6 +2264,28 @@ struct ltm_iterate_requests_callback_extra {
     iterate_requests_callback callback;
     void *extra;
 };
+
+static int
+find_db_by_dict_id(OMTVALUE v, void *dict_id_v) {
+    DB *db = (DB *) v;
+    DICTIONARY_ID dict_id = db->i->dict_id;
+    DICTIONARY_ID dict_id_find = *(DICTIONARY_ID *) dict_id_v;
+    if (dict_id.dictid < dict_id_find.dictid) {
+        return -1;
+    } else if (dict_id.dictid > dict_id_find.dictid) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
+static DB *
+locked_get_db_by_dict_id(DB_ENV *env, DICTIONARY_ID dict_id) {
+    OMTVALUE dbv;
+    int r = toku_omt_find_zero(env->i->open_dbs_by_dict_id, find_db_by_dict_id,
+                               (void *) &dict_id, &dbv, nullptr);
+    return r == 0 ? (DB *) dbv : nullptr;
+}
 
 static int ltm_iterate_requests_callback(DICTIONARY_ID dict_id, TXNID txnid,
                                          const DBT *left_key,

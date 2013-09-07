@@ -141,16 +141,9 @@ public:
     int start(void);
 
     // effect: Sleeps until either the request is granted or the wait time expires.
-    //         If the wait time expires and callback is non-null, call it.
     // returns: The return code of locktree::acquire_[write,read]_lock()
     //          or simply DB_LOCK_NOTGRANTED if the wait time expired.
-    typedef void (*lt_timeout_callback)(DICTIONARY_ID dict_id,
-                                        TXNID txnid,
-                                        const DBT *left_key,
-                                        const DBT *right_key,
-                                        TXNID blocking_txnid,
-                                        void *extra);
-    int wait(lt_timeout_callback callback, void *extra);
+    int wait();
 
     // return: left end-point of the lock range
     const DBT *get_left_key(void) const;

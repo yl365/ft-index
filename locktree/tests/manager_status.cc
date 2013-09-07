@@ -138,7 +138,7 @@ void manager_unit_test::test_status(void) {
     request_b.set(lt, txnid_b, one, one, lock_request::type::WRITE);
     r = request_b.start();
     assert(r == DB_LOCK_NOTGRANTED);
-    r = request_b.wait(nullptr, nullptr);
+    r = request_b.wait();
     assert(r == DB_LOCK_NOTGRANTED);
     request_b.destroy();
 
