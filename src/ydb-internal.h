@@ -103,7 +103,6 @@ PATENT RIGHTS GRANT:
 #include <util/omt.h>
 
 #include <locktree/locktree.h>
-#include <locktree/lock_request.h>
 #include <locktree/range_buffer.h>
 
 #include <toku_list.h>

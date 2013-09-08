@@ -1721,8 +1721,6 @@ env_set_lock_timeout(DB_ENV *env, uint64_t lock_timeout_msec) {
 
 static int
 env_set_lock_timeout_callback(DB_ENV *env, lock_timeout_callback callback) {
-    // We wrap the user's callback in an environment timeout callback that
-    // knows how to translaet dictionary id into DB *.
     env->i->lock_wait_timeout_callback = callback;
     return 0;
 }

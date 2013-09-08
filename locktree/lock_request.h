@@ -143,7 +143,7 @@ public:
     // effect: Sleeps until either the request is granted or the wait time expires.
     // returns: The return code of locktree::acquire_[write,read]_lock()
     //          or simply DB_LOCK_NOTGRANTED if the wait time expired.
-    int wait();
+    int wait(void);
 
     // return: left end-point of the lock range
     const DBT *get_left_key(void) const;
