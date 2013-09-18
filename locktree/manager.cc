@@ -404,7 +404,6 @@ int locktree::manager::memory_tracker::check_current_lock_constraints(void) {
         uint64_t t1 = toku_current_time_microsec();
         m_mgr->escalation_wait(t1 - t0);
     }
-
     return r;
 }
 
