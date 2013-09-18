@@ -94,6 +94,8 @@ PATENT RIGHTS GRANT:
 
 using namespace toku;
 
+static int verbose = 0;
+
 static void locktree_release_lock(locktree *lt, TXNID txn_id, int64_t left_k, int64_t right_k) {
     range_buffer buffer;
     buffer.create();
@@ -160,7 +162,8 @@ static void *small_f(void *_arg) {
 }
 
 static void e_callback(TXNID txnid, const locktree *lt, const range_buffer &buffer, void *extra) {
-    printf("%u %s %" PRIu64 " %p %d %p\n", toku_os_gettid(), __FUNCTION__, txnid, lt, buffer.get_num_ranges(), extra);
+    if (verbose)
+        printf("%u %s %" PRIu64 " %p %d %p\n", toku_os_gettid(), __FUNCTION__, txnid, lt, buffer.get_num_ranges(), extra);
 }
 
 int main(int argc, const char *argv[]) {
@@ -187,7 +190,7 @@ int main(int argc, const char *argv[]) {
     r = toku_pthread_create(&big_id, nullptr, big_f, &big_arg);
     assert(r == 0);
 
-    const int n_small = 2;
+    const int n_small = 7;
     pthread_t small_ids[n_small];
     struct arg small_args[n_small];
 

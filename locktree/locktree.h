@@ -335,8 +335,6 @@ public:
 
         struct lt_counters m_lt_counters;
 
-        struct lt_counters m_lt_counters;
-
         // lock wait time for blocking row locks, in ms
         uint64_t m_lock_wait_time_ms;
 
