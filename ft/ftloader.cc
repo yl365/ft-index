@@ -562,7 +562,7 @@ int toku_ft_loader_internal_init (/* out */ FTLOADER *blp,
             bl->reserved_memory = loader_memory;
     }
     bl->compress_intermediates = compress_intermediates;
-    //printf("Reserved memory=%ld\n", bl->reserved_memory);
+    fprintf(stderr, "%s:%u Reserved memory=%ld\n", __FUNCTION__, __LINE__, bl->reserved_memory);
 
     bl->src_db = src_db;
     bl->N = N;
