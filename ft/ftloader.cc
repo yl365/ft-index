@@ -541,7 +541,8 @@ int toku_ft_loader_internal_init (/* out */ FTLOADER *blp,
                                    LSN load_lsn,
                                    TOKUTXN txn,
                                    bool reserve_memory,
-                                   bool compress_intermediates)
+                                   bool compress_intermediates,
+                                   uint64_t loader_memory)
 // Effect: Allocate and initialize a FTLOADER, but do not create the extractor thread.
 {
     FTLOADER CALLOC(bl); // initialized to all zeros (hence CALLOC)
@@ -549,13 +550,16 @@ int toku_ft_loader_internal_init (/* out */ FTLOADER *blp,
 
     bl->generate_row_for_put = g;
     bl->cachetable = cachetable;
-    if (reserve_memory && bl->cachetable) {
+    if (reserve_memory && bl->cachetable && loader_memory == 0) {
         bl->did_reserve_memory = true;
         bl->reserved_memory = toku_cachetable_reserve_memory(bl->cachetable, 2.0/3.0); // allocate 2/3 of the unreserved part (which is 3/4 of the memory to start with).
     }
     else {
         bl->did_reserve_memory = false;
-        bl->reserved_memory = 512*1024*1024; // if no cache table use 512MB.
+        if (loader_memory == 0)
+            bl->reserved_memory = 512*1024*1024; // if no cache table use 512MB.
+        else
+            bl->reserved_memory = loader_memory;
     }
     bl->compress_intermediates = compress_intermediates;
     //printf("Reserved memory=%ld\n", bl->reserved_memory);
@@ -645,7 +649,8 @@ int toku_ft_loader_open (/* out */ FTLOADER *blp,
                           LSN load_lsn,
                           TOKUTXN txn,
                           bool reserve_memory,
-                          bool compress_intermediates)
+                          bool compress_intermediates,
+                          uint64_t loader_memory)
 /* Effect: called by DB_ENV->create_loader to create a brt loader.
  * Arguments:
  *   blp                  Return the brt loader here.
@@ -668,7 +673,8 @@ int toku_ft_loader_open (/* out */ FTLOADER *blp,
                                               load_lsn,
                                               txn,
                                               reserve_memory,
-                                              compress_intermediates);
+                                              compress_intermediates,
+                                              loader_memory);
         if (r!=0) result = r;
     }
     if (result==0) {

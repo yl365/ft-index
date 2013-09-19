@@ -342,7 +342,8 @@ int toku_ft_loader_internal_init (/* out */ FTLOADER *blp,
 				   LSN load_lsn,
                                    TOKUTXN txn,
                                    bool reserve_memory,
-                                   bool compress_intermediates);
+                                   bool compress_intermediates,
+                                   uint64_t loader_memory = 0);
 
 void toku_ft_loader_internal_destroy (FTLOADER bl, bool is_error);
 

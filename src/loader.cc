@@ -241,7 +241,8 @@ toku_loader_create_loader(DB_ENV *env,
                           uint32_t db_flags[/*N*/],
                           uint32_t dbt_flags[/*N*/],
                           uint32_t loader_flags,
-                          bool check_empty) {
+                          bool check_empty,
+                          uint64_t loader_memory) {
     int rval;
     HANDLE_READ_ONLY_TXN(txn);
 
@@ -329,7 +330,8 @@ toku_loader_create_loader(DB_ENV *env,
                                  load_lsn,
                                  ttxn,
                                  puts_allowed,
-                                 compress_intermediates);
+                                 compress_intermediates, 
+                                 loader_memory);
         if ( rval!=0 ) {
             toku_free(new_inames_in_env);
             toku_free(brts);
