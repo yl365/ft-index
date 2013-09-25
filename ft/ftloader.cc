@@ -550,7 +550,9 @@ int toku_ft_loader_internal_init (/* out */ FTLOADER *blp,
 
     bl->generate_row_for_put = g;
     bl->cachetable = cachetable;
-    if (reserve_memory && bl->cachetable && loader_memory == 0) {
+    if (reserve_memory && bl->cachetable) {
+        if (loader_memory != 0)
+            toku_cachetable_set_reserve_limit(bl->cachetable, loader_memory);
         bl->did_reserve_memory = true;
         bl->reserved_memory = toku_cachetable_reserve_memory(bl->cachetable, 2.0/3.0); // allocate 2/3 of the unreserved part (which is 3/4 of the memory to start with).
     }

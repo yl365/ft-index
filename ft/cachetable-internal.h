@@ -490,6 +490,7 @@ public:
     void change_pair_attr(PAIR_ATTR old_attr, PAIR_ATTR new_attr);
     void add_to_size_current(long size);
     void remove_from_size_current(long size);
+    void set_reserve_limit(uint64_t limit);
     uint64_t reserve_memory(double fraction);
     void release_reserved_memory(uint64_t reserved_memory);
     void run_eviction_thread();
@@ -517,6 +518,7 @@ private:
 
     pair_list* m_pl;
     int64_t m_size_current;            // the sum of the sizes of the pairs in the cachetable
+    uint64_t m_reserve_limit;
     // changes to these two values are protected
     // by ev_thread_lock
     int64_t m_size_reserved;           // How much memory is reserved (e.g., by the loader)

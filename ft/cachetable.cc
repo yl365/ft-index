@@ -318,6 +318,10 @@ CHECKPOINTER toku_cachetable_get_checkpointer(CACHETABLE ct) {
     return &ct->cp;
 }
 
+void toku_cachetable_set_reserve_limit(CACHETABLE ct, uint64_t limit) {
+    ct->ev.set_reserve_limit(limit);
+}
+
 uint64_t toku_cachetable_reserve_memory(CACHETABLE ct, double fraction) {
     uint64_t reserved_memory = 0;
     reserved_memory = ct->ev.reserve_memory(fraction);
@@ -3649,6 +3653,7 @@ void evictor::init(long _size_limit, pair_list* _pl, KIBBUTZ _kibbutz, uint32_t 
         m_high_size_watermark = m_high_size_hysteresis + max_diff;
     }
     
+    m_reserve_limit = 0;
     m_size_reserved = unreservable_memory(_size_limit);
     m_size_current = 0;
     m_size_evicting = 0;
@@ -3779,10 +3784,16 @@ void evictor::remove_from_size_current(long size) {
 //
 // TODO: (Zardosht) comment this function
 //
+void evictor::set_reserve_limit(uint64_t limit) {
+    m_reserve_limit = limit;
+}
+
 uint64_t evictor::reserve_memory(double fraction) {
     uint64_t reserved_memory = 0;
     toku_mutex_lock(&m_ev_thread_lock);
     reserved_memory = fraction * (m_low_size_watermark - m_size_reserved);
+    if (m_reserve_limit > 0 && reserved_memory > m_reserve_limit)
+        reserved_memory = m_reserve_limit;
     m_size_reserved += reserved_memory;
     (void) toku_sync_fetch_and_add(&m_size_current, reserved_memory);
     this->signal_eviction_thread();  
